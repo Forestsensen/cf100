@@ -116,6 +116,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
 
   const actualTitle = title;
   const actualPoster = poster;
+  const actualPosterUrl = useMemo(() => {
+    const trimmedPoster = actualPoster.trim();
+    return trimmedPoster ? processImageUrl(trimmedPoster) : '';
+  }, [actualPoster]);
   const actualSource = source;
   const actualId = id;
   const actualDoubanId = dynamicDoubanId;
@@ -547,7 +551,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
           {!isLoading && <ImagePlaceholder aspectRatio='aspect-[2/3]' />}
           {/* 图片 */}
           <Image
-            src={processImageUrl(actualPoster)}
+            src={actualPosterUrl}
             alt={actualTitle}
             fill
             className={origin === 'live' ? 'object-contain' : 'object-cover'}
@@ -560,7 +564,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
               if (!img.dataset.retried) {
                 img.dataset.retried = 'true';
                 setTimeout(() => {
-                  img.src = processImageUrl(actualPoster);
+                  img.src = actualPosterUrl;
                 }, 2000);
               }
             }}
@@ -1030,7 +1034,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
         isOpen={showMobileActions}
         onClose={() => setShowMobileActions(false)}
         title={actualTitle}
-        poster={processImageUrl(actualPoster)}
+        poster={actualPosterUrl}
         actions={mobileActions}
         sources={isAggregate && dynamicSourceNames ? Array.from(new Set(dynamicSourceNames)) : undefined}
         isAggregate={isAggregate}
