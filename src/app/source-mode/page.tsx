@@ -402,7 +402,8 @@ function SourceModePageClient() {
                     value: item.id,
                   })),
                   selectedTop,
-                  handleTopChange
+                  handleTopChange,
+                  true
                 )}
 
               {selectedTopNode &&
@@ -417,7 +418,8 @@ function SourceModePageClient() {
                     })),
                   ],
                   selectedChild,
-                  handleChildChange
+                  handleChildChange,
+                  true
                 )}
             </div>
           </div>
