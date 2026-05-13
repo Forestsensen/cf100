@@ -22,6 +22,7 @@ async function createStorageAsync(): Promise<IStorage> {
       return new RedisStorage();
     }
     case 'upstash': {
+      // @ts-expect-error upstash 模块类型声明在 CF Pages 构建中可能不可用
       const { UpstashRedisStorage } = await import('./upstash.db');
       return new UpstashRedisStorage();
     }
@@ -31,6 +32,7 @@ async function createStorageAsync(): Promise<IStorage> {
       return new KvrocksStorage();
     }
     case 'd1': {
+      // @ts-expect-error d1 模块类型声明在 CF Pages 构建中可能不可用
       const { D1Storage } = await import('./d1.db');
       return new D1Storage();
     }
