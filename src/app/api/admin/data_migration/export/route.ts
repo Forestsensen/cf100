@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { promisify } from 'util';
-import { gzip } from 'zlib';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { SimpleCrypto } from '@/lib/crypto';
@@ -11,7 +9,13 @@ import { CURRENT_VERSION } from '@/lib/version';
 
 export const runtime = 'edge';
 
-const gzipAsync = promisify(gzip);
+async function gzipData(data: string): Promise<Uint8Array> {
+  const encoder = new TextEncoder();
+  const stream = new Blob([data]).stream().pipeThrough(new CompressionStream('gzip'));
+  const compressed = new Response(stream);
+  const buffer = await compressed.arrayBuffer();
+  return new Uint8Array(buffer);
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -88,11 +92,14 @@ export async function POST(req: NextRequest) {
     // 将数据转换为JSON字符串
     const jsonData = JSON.stringify(exportData);
 
-    // 先压缩数据
-    const compressedData = await gzipAsync(jsonData);
+    // 先压缩数据（使用 Web CompressionStream API）
+    const compressedData = await gzipData(jsonData);
+
+    // 将压缩数据转为 base64
+    const compressedBase64 = btoa(String.fromCharCode(...compressedData));
 
     // 使用提供的密码加密压缩后的数据
-    const encryptedData = SimpleCrypto.encrypt(compressedData.toString('base64'), password);
+    const encryptedData = SimpleCrypto.encrypt(compressedBase64, password);
 
     // 生成文件名
     const now = new Date();

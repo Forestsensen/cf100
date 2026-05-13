@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { promisify } from 'util';
-import { gunzip } from 'zlib';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { configSelfCheck, setCachedConfig } from '@/lib/config';
@@ -11,7 +9,19 @@ import { db } from '@/lib/db';
 
 export const runtime = 'edge';
 
-const gunzipAsync = promisify(gunzip);
+async function gunzipData(base64Data: string): Promise<string> {
+  // Decode base64 to binary
+  const binaryString = atob(base64Data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  // Use DecompressionStream API
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const response = new Response(stream);
+  return await response.text();
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -59,10 +69,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '解密失败，请检查密码是否正确' }, { status: 400 });
     }
 
-    // 解压缩数据
-    const compressedBuffer = Buffer.from(decryptedData, 'base64');
-    const decompressedBuffer = await gunzipAsync(compressedBuffer);
-    const decompressedData = decompressedBuffer.toString();
+    // 解压缩数据（使用 Web DecompressionStream API）
+    let decompressedData: string;
+    try {
+      decompressedData = await gunzipData(decryptedData);
+    } catch (error) {
+      return NextResponse.json({ error: '解压缩失败，数据格式不正确' }, { status: 400 });
+    }
 
     // 解析JSON数据
     let importData: any;
