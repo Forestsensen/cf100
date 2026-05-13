@@ -95,8 +95,12 @@ export async function POST(req: NextRequest) {
     // 先压缩数据（使用 Web CompressionStream API）
     const compressedData = await gzipData(jsonData);
 
-    // 将压缩数据转为 base64
-    const compressedBase64 = btoa(String.fromCharCode(...compressedData));
+    // 将压缩数据转为 base64（分块处理，避免 TS downlevelIteration 限制）
+    let binaryString = '';
+    for (let i = 0; i < compressedData.length; i++) {
+      binaryString += String.fromCharCode(compressedData[i]);
+    }
+    const compressedBase64 = btoa(binaryString);
 
     // 使用提供的密码加密压缩后的数据
     const encryptedData = SimpleCrypto.encrypt(compressedBase64, password);
