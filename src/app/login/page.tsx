@@ -13,6 +13,8 @@ import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 // 版本显示组件
+
+export const runtime = 'edge';
 function VersionDisplay() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [isChecking, setIsChecking] = useState(true);

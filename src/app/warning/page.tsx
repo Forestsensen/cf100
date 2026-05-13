@@ -1,5 +1,7 @@
 import { Metadata } from 'next';
 
+
+export const runtime = 'edge';
 export const metadata: Metadata = {
   title: '安全警告 - MoonTV',
   description: '站点安全配置警告',

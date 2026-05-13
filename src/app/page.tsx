@@ -7,6 +7,8 @@ import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 
 import {
+
+export const runtime = 'edge';
   BangumiCalendarData,
   GetBangumiCalendarData,
 } from '@/lib/bangumi.client';

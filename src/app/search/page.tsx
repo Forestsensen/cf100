@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import React, { startTransition, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+
+export const runtime = 'edge';
   addSearchHistory,
   clearSearchHistory,
   deleteSearchHistory,

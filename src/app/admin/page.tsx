@@ -3,6 +3,8 @@
 'use client';
 
 import {
+
+export const runtime = 'edge';
   closestCenter,
   DndContext,
   PointerSensor,

@@ -8,6 +8,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { GetBangumiCalendarData } from '@/lib/bangumi.client';
 import {
+
+export const runtime = 'edge';
   getDoubanCategories,
   getDoubanList,
   getDoubanRecommends,

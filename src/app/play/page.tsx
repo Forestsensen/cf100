@@ -9,6 +9,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import {
+
+export const runtime = 'edge';
   deleteFavorite,
   deletePlayRecord,
   deleteSkipConfig,
