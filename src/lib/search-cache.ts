@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { SearchResult } from '@/lib/types';
 
 // 缓存状态类型

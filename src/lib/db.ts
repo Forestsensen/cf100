@@ -17,7 +17,7 @@ const STORAGE_TYPE =
 async function createStorageAsync(): Promise<IStorage> {
   switch (STORAGE_TYPE) {
     case 'redis': {
-      // @ts-ignore redis 模块不兼容 Edge Runtime，仅 Node.js 部署可用
+      // @ts-expect-error redis 模块不兼容 Edge Runtime，仅 Node.js 部署可用
       const { RedisStorage } = await import('./redis.db');
       return new RedisStorage();
     }
@@ -26,7 +26,7 @@ async function createStorageAsync(): Promise<IStorage> {
       return new UpstashRedisStorage();
     }
     case 'kvrocks': {
-      // @ts-ignore kvrocks 模块依赖 redis npm 包，不兼容 Edge Runtime
+      // @ts-expect-error kvrocks 模块依赖 redis npm 包，不兼容 Edge Runtime
       const { KvrocksStorage } = await import('./kvrocks.db');
       return new KvrocksStorage();
     }
@@ -44,7 +44,7 @@ async function createStorageAsync(): Promise<IStorage> {
 let storageInstance: IStorage | null = null;
 let storagePromise: Promise<IStorage> | null = null;
 
-function getStorage(): IStorage {
+function _getStorage(): IStorage {
   if (storageInstance) {
     return storageInstance;
   }

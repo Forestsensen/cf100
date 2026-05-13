@@ -10,7 +10,6 @@ import { CURRENT_VERSION } from '@/lib/version';
 export const runtime = 'edge';
 
 async function gzipData(data: string): Promise<Uint8Array> {
-  const encoder = new TextEncoder();
   const stream = new Blob([data]).stream().pipeThrough(new CompressionStream('gzip'));
   const compressed = new Response(stream);
   const buffer = await compressed.arrayBuffer();
