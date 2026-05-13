@@ -2,7 +2,8 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 
 const nextConfig = {
-  output: 'standalone',
+// output: 'standalone' is incompatible with Cloudflare Pages (which uses edge workers)
+// Removed for CF Pages deployment
   eslint: {
     dirs: ['src'],
   },
@@ -10,9 +11,10 @@ const nextConfig = {
   reactStrictMode: false,
   swcMinify: false,
 
-  experimental: {
-    instrumentationHook: process.env.NODE_ENV === 'production',
-  },
+  // instrumentationHook requires Node.js runtime, disabled for CF Pages (edge)
+  // experimental: {
+  //   instrumentationHook: process.env.NODE_ENV === 'production',
+  // },
 
   // Uncoment to add domain whitelist
   images: {

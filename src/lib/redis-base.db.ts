@@ -252,7 +252,7 @@ export abstract class BaseRedisStorage implements IStorage {
   }
 
   async registerUser(userName: string, password: string): Promise<void> {
-    const hashed = hashPassword(password);
+    const hashed = await hashPassword(password);
     await this.withRetry(() => this.client.set(this.userPwdKey(userName), hashed));
     // 维护用户集合
     await this.withRetry(() => this.client.sAdd(this.usersSetKey(), userName));
@@ -264,10 +264,10 @@ export abstract class BaseRedisStorage implements IStorage {
     );
     if (stored === null) return false;
     const storedStr = ensureString(stored);
-    const ok = verifyPassword(password, storedStr);
+    const ok = await verifyPassword(password, storedStr);
     // 平滑迁移：如果是明文密码且验证通过，自动升级为加盐哈希
     if (ok && !isHashed(storedStr)) {
-      const hashed = hashPassword(password);
+      const hashed = await hashPassword(password);
       await this.withRetry(() => this.client.set(this.userPwdKey(userName), hashed));
     }
     return ok;
@@ -284,7 +284,7 @@ export abstract class BaseRedisStorage implements IStorage {
 
   // 修改用户密码
   async changePassword(userName: string, newPassword: string): Promise<void> {
-    const hashed = hashPassword(newPassword);
+    const hashed = await hashPassword(newPassword);
     await this.withRetry(() =>
       this.client.set(this.userPwdKey(userName), hashed)
     );
@@ -563,7 +563,7 @@ export abstract class BaseRedisStorage implements IStorage {
         // 跳过已经是哈希格式的
         if (isHashed(storedStr)) continue;
         // 将明文密码转为加盐哈希
-        const hashed = hashPassword(storedStr);
+        const hashed = await hashPassword(storedStr);
         await this.withRetry(() => this.client.set(key, hashed));
         count++;
       }

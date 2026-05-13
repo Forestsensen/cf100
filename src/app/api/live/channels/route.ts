@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getCachedLiveChannels } from '@/lib/live';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,13 +10,13 @@ export async function GET(request: NextRequest) {
     const sourceKey = searchParams.get('source');
 
     if (!sourceKey) {
-      return NextResponse.json({ error: '缺少直播源参数' }, { status: 400 });
+      return NextResponse.json({ error: '缺少直播源参�? }, { status: 400 });
     }
 
     const channelData = await getCachedLiveChannels(sourceKey);
 
     if (!channelData) {
-      return NextResponse.json({ error: '频道信息未找到' }, { status: 404 });
+      return NextResponse.json({ error: '频道信息未找�? }, { status: 404 });
     }
 
     return NextResponse.json({

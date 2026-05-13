@@ -6,10 +6,9 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
-// 支持的操作类型
-type Action = 'add' | 'disable' | 'enable' | 'delete' | 'sort' | 'batch_disable' | 'batch_enable' | 'batch_delete';
+// 支持的操作类�?type Action = 'add' | 'disable' | 'enable' | 'delete' | 'sort' | 'batch_disable' | 'batch_enable' | 'batch_delete';
 
 interface BaseBody {
   action?: Action;
@@ -42,11 +41,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
     }
 
-    // 获取配置与存储
-    const adminConfig = await getConfig();
+    // 获取配置与存�?    const adminConfig = await getConfig();
 
-    // 权限与身份校验
-    if (username !== process.env.USERNAME) {
+    // 权限与身份校�?    if (username !== process.env.USERNAME) {
       const userEntry = adminConfig.UserConfig.Users.find(
         (u) => u.username === username
       );
@@ -67,7 +64,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
         }
         if (adminConfig.SourceConfig.some((s) => s.key === key)) {
-          return NextResponse.json({ error: '该源已存在' }, { status: 400 });
+          return NextResponse.json({ error: '该源已存�? }, { status: 400 });
         }
         adminConfig.SourceConfig.push({
           key,
@@ -112,9 +109,7 @@ export async function POST(request: NextRequest) {
         }
         adminConfig.SourceConfig.splice(idx, 1);
 
-        // 检查并清理用户组和用户的权限数组
-        // 清理用户组权限
-        if (adminConfig.UserConfig.Tags) {
+        // 检查并清理用户组和用户的权限数�?        // 清理用户组权�?        if (adminConfig.UserConfig.Tags) {
           adminConfig.UserConfig.Tags.forEach(tag => {
             if (tag.enabledApis) {
               tag.enabledApis = tag.enabledApis.filter(api => api !== key);
@@ -133,7 +128,7 @@ export async function POST(request: NextRequest) {
       case 'batch_disable': {
         const { keys } = body as { keys?: string[] };
         if (!Array.isArray(keys) || keys.length === 0) {
-          return NextResponse.json({ error: '缺少 keys 参数或为空' }, { status: 400 });
+          return NextResponse.json({ error: '缺少 keys 参数或为�? }, { status: 400 });
         }
         keys.forEach(key => {
           const entry = adminConfig.SourceConfig.find((s) => s.key === key);
@@ -146,7 +141,7 @@ export async function POST(request: NextRequest) {
       case 'batch_enable': {
         const { keys } = body as { keys?: string[] };
         if (!Array.isArray(keys) || keys.length === 0) {
-          return NextResponse.json({ error: '缺少 keys 参数或为空' }, { status: 400 });
+          return NextResponse.json({ error: '缺少 keys 参数或为�? }, { status: 400 });
         }
         keys.forEach(key => {
           const entry = adminConfig.SourceConfig.find((s) => s.key === key);
@@ -159,10 +154,9 @@ export async function POST(request: NextRequest) {
       case 'batch_delete': {
         const { keys } = body as { keys?: string[] };
         if (!Array.isArray(keys) || keys.length === 0) {
-          return NextResponse.json({ error: '缺少 keys 参数或为空' }, { status: 400 });
+          return NextResponse.json({ error: '缺少 keys 参数或为�? }, { status: 400 });
         }
-        // 过滤掉 from=config 的源，但不报错
-        const keysToDelete = keys.filter(key => {
+        // 过滤�?from=config 的源，但不报�?        const keysToDelete = keys.filter(key => {
           const entry = adminConfig.SourceConfig.find((s) => s.key === key);
           return entry && entry.from !== 'config';
         });
@@ -175,10 +169,8 @@ export async function POST(request: NextRequest) {
           }
         });
 
-        // 检查并清理用户组和用户的权限数组
-        if (keysToDelete.length > 0) {
-          // 清理用户组权限
-          if (adminConfig.UserConfig.Tags) {
+        // 检查并清理用户组和用户的权限数�?        if (keysToDelete.length > 0) {
+          // 清理用户组权�?          if (adminConfig.UserConfig.Tags) {
             adminConfig.UserConfig.Tags.forEach(tag => {
               if (tag.enabledApis) {
                 tag.enabledApis = tag.enabledApis.filter(api => !keysToDelete.includes(api));
@@ -212,8 +204,7 @@ export async function POST(request: NextRequest) {
             map.delete(k);
           }
         });
-        // 未在 order 中的保持原顺序
-        adminConfig.SourceConfig.forEach((item) => {
+        // 未在 order 中的保持原顺�?        adminConfig.SourceConfig.forEach((item) => {
           if (map.has(item.key)) newList.push(item);
         });
         adminConfig.SourceConfig = newList;
@@ -235,10 +226,10 @@ export async function POST(request: NextRequest) {
       }
     );
   } catch (error) {
-    console.error('视频源管理操作失败:', error);
+    console.error('视频源管理操作失�?', error);
     return NextResponse.json(
       {
-        error: '视频源管理操作失败',
+        error: '视频源管理操作失�?,
         details: (error as Error).message,
       },
       { status: 500 }

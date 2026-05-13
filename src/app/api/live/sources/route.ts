@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   console.log(request.url)
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const config = await getConfig();
 
     if (!config) {
-      return NextResponse.json({ error: '配置未找到' }, { status: 404 });
+      return NextResponse.json({ error: '配置未找�? }, { status: 404 });
     }
 
     // 过滤出所有非 disabled 的直播源
@@ -23,9 +23,9 @@ export async function GET(request: NextRequest) {
       data: liveSources
     });
   } catch (error) {
-    console.error('获取直播源失败:', error);
+    console.error('获取直播源失�?', error);
     return NextResponse.json(
-      { error: '获取直播源失败' },
+      { error: '获取直播源失�? },
       { status: 500 }
     );
   }

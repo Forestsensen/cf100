@@ -6,7 +6,7 @@ import { AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
         result.Role = 'admin';
       } else {
         return NextResponse.json(
-          { error: '你是管理员吗你就访问？' },
+          { error: '你是管理员吗你就访问�? },
           { status: 401 }
         );
       }
@@ -51,10 +51,10 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('获取管理员配置失败:', error);
+    console.error('获取管理员配置失�?', error);
     return NextResponse.json(
       {
-        error: '获取管理员配置失败',
+        error: '获取管理员配置失�?,
         details: (error as Error).message,
       },
       { status: 500 }

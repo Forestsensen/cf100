@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -46,17 +46,13 @@ export async function GET(request: Request) {
       );
     }
 
-    // 创建响应头
-    const headers = new Headers();
+    // 创建响应�?    const headers = new Headers();
     if (contentType) {
       headers.set('Content-Type', contentType);
     }
 
-    // 设置缓存头
-    headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400'); // 缓存一天
-
-    // 直接返回图片流
-    return new Response(imageResponse.body, {
+    // 设置缓存�?    headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400'); // 缓存一�?
+    // 直接返回图片�?    return new Response(imageResponse.body, {
       status: 200,
       headers,
     });

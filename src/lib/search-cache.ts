@@ -18,7 +18,7 @@ const MAX_CACHE_SIZE = 1000; // 最大缓存条目数量
 const SEARCH_CACHE: Map<string, CachedPageEntry> = new Map();
 
 // 自动清理定时器
-let cleanupTimer: NodeJS.Timeout | null = null;
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 let lastCleanupTime = 0;
 
 /**
@@ -137,8 +137,8 @@ function startAutoCleanup(): void {
     performCacheCleanup();
   }, CACHE_CLEANUP_INTERVAL_MS);
 
-  // 在 Node.js 环境中避免阻止程序退出
-  if (typeof process !== 'undefined' && cleanupTimer.unref) {
-    cleanupTimer.unref();
+  // 在支持的环境中避免阻止程序退出
+  if (typeof process !== 'undefined' && typeof (cleanupTimer as any)?.unref === 'function') {
+    (cleanupTimer as any).unref();
   }
 }

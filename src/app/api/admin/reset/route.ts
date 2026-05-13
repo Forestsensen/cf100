@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { resetConfig } from '@/lib/config';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   const username = authInfo.username;
 
   if (username !== process.env.USERNAME) {
-    return NextResponse.json({ error: '仅支持站长重置配置' }, { status: 401 });
+    return NextResponse.json({ error: '仅支持站长重置配�? }, { status: 401 });
   }
 
   try {
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: '重置管理员配置失败',
+        error: '重置管理员配置失�?,
         details: (error as Error).message,
       },
       { status: 500 }

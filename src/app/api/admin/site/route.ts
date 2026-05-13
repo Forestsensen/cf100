@@ -6,7 +6,7 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function POST(request: NextRequest) {
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
@@ -74,8 +74,7 @@ export async function POST(request: NextRequest) {
 
     // 权限校验
     if (username !== process.env.USERNAME) {
-      // 管理员
-      const user = adminConfig.UserConfig.Users.find(
+      // 管理�?      const user = adminConfig.UserConfig.Users.find(
         (u) => u.username === username
       );
       if (!user || user.role !== 'admin' || user.banned) {
@@ -98,15 +97,13 @@ export async function POST(request: NextRequest) {
       EnableWebLive: EnableWebLive ?? false,
     };
 
-    // 写入数据库
-    await db.saveAdminConfig(adminConfig);
+    // 写入数据�?    await db.saveAdminConfig(adminConfig);
 
     return NextResponse.json(
       { ok: true },
       {
         headers: {
-          'Cache-Control': 'no-store', // 不缓存结果
-        },
+          'Cache-Control': 'no-store', // 不缓存结�?        },
       }
     );
   } catch (error) {

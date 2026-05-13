@@ -7,7 +7,7 @@ import { getAvailableApiSites, getCacheTime, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
 import { yellowWords } from '@/lib/yellow';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   const authInfo = getAuthInfoFromCookie(request);
@@ -36,8 +36,7 @@ export async function GET(request: NextRequest) {
   const config = await getConfig();
   const apiSites = await getAvailableApiSites(authInfo.username);
 
-  // 添加超时控制和错误处理，避免慢接口拖累整体响应
-  const searchPromises = apiSites.map((site) =>
+  // 添加超时控制和错误处理，避免慢接口拖累整体响�?  const searchPromises = apiSites.map((site) =>
     Promise.race([
       searchFromApi(site, query),
       new Promise((_, reject) =>
@@ -45,8 +44,7 @@ export async function GET(request: NextRequest) {
       ),
     ]).catch((err) => {
       console.warn(`搜索失败 ${site.name}:`, err.message);
-      return []; // 返回空数组而不是抛出错误
-    })
+      return []; // 返回空数组而不是抛出错�?    })
   );
 
   try {

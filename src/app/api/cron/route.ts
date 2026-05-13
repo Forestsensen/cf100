@@ -8,7 +8,7 @@ import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { refreshLiveChannels } from '@/lib/live';
 import { SearchResult } from '@/lib/types';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   console.log(request.url);
@@ -46,21 +46,19 @@ async function cronJob() {
 async function refreshAllLiveChannels() {
   const config = await getConfig();
 
-  // 并发刷新所有启用的直播源
-  const refreshPromises = (config.LiveConfig || [])
+  // 并发刷新所有启用的直播�?  const refreshPromises = (config.LiveConfig || [])
     .filter(liveInfo => !liveInfo.disabled)
     .map(async (liveInfo) => {
       try {
         const nums = await refreshLiveChannels(liveInfo);
         liveInfo.channelNumber = nums;
       } catch (error) {
-        console.error(`刷新直播源失败 [${liveInfo.name || liveInfo.key}]:`, error);
+        console.error(`刷新直播源失�?[${liveInfo.name || liveInfo.key}]:`, error);
         liveInfo.channelNumber = 0;
       }
     });
 
-  // 等待所有刷新任务完成
-  await Promise.all(refreshPromises);
+  // 等待所有刷新任务完�?  await Promise.all(refreshPromises);
 
   // 保存配置
   await db.saveAdminConfig(config);
@@ -78,7 +76,7 @@ async function refreshConfig() {
 
       const configContent = await response.text();
 
-      // 对 configContent 进行 base58 解码
+      // �?configContent 进行 base58 解码
       let decodedContent;
       try {
         const bs58 = (await import('bs58')).default;
@@ -92,7 +90,7 @@ async function refreshConfig() {
       try {
         JSON.parse(decodedContent);
       } catch (e) {
-        throw new Error('配置文件格式错误，请检查 JSON 语法');
+        throw new Error('配置文件格式错误，请检�?JSON 语法');
       }
       config.ConfigFile = decodedContent;
       config.ConfigSubscribtion.LastCheck = new Date().toISOString();
@@ -102,7 +100,7 @@ async function refreshConfig() {
       console.error('刷新配置失败:', e);
     }
   } else {
-    console.log('跳过刷新：未配置订阅地址或自动更新');
+    console.log('跳过刷新：未配置订阅地址或自动更�?);
   }
 }
 
@@ -112,7 +110,7 @@ async function refreshRecordAndFavorites() {
     if (process.env.USERNAME && !users.includes(process.env.USERNAME)) {
       users.push(process.env.USERNAME);
     }
-    // 函数级缓存：key 为 `${source}+${id}`，值为 Promise<VideoDetail | null>
+    // 函数级缓存：key �?`${source}+${id}`，值为 Promise<VideoDetail | null>
     const detailCache = new Map<string, Promise<SearchResult | null>>();
 
     // 获取详情 Promise（带缓存和错误处理）
@@ -162,7 +160,7 @@ async function refreshRecordAndFavorites() {
 
     // 处理单个用户的播放记录和收藏
     const processUser = async (user: string) => {
-      console.log(`开始处理用户: ${user}`);
+      console.log(`开始处理用�? ${user}`);
 
       // 播放记录
       try {
@@ -181,7 +179,7 @@ async function refreshRecordAndFavorites() {
 
             const detail = await getDetail(source, id, record.title);
             if (!detail) {
-              console.warn(`跳过无法获取详情的播放记录: ${key}`);
+              console.warn(`跳过无法获取详情的播放记�? ${key}`);
               return;
             }
 
@@ -236,7 +234,7 @@ async function refreshRecordAndFavorites() {
 
             const favDetail = await getDetail(source, id, fav.title);
             if (!favDetail) {
-              console.warn(`跳过无法获取详情的收藏: ${key}`);
+              console.warn(`跳过无法获取详情的收�? ${key}`);
               return;
             }
 

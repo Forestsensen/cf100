@@ -5,7 +5,7 @@ import { getAvailableApiSites, getCacheTime, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
 import { yellowWords } from '@/lib/yellow';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 // OrionTV 兼容接口
 export async function GET(request: NextRequest) {
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   if (!query || !resourceId) {
     const cacheTime = await getCacheTime();
     return NextResponse.json(
-      { result: null, error: '缺少必要参数: q 或 resourceId' },
+      { result: null, error: '缺少必要参数: q �?resourceId' },
       {
         headers: {
           'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
@@ -37,12 +37,12 @@ export async function GET(request: NextRequest) {
   const apiSites = await getAvailableApiSites(authInfo.username);
 
   try {
-    // 根据 resourceId 查找对应的 API 站点
+    // 根据 resourceId 查找对应�?API 站点
     const targetSite = apiSites.find((site) => site.key === resourceId);
     if (!targetSite) {
       return NextResponse.json(
         {
-          error: `未找到指定的视频源: ${resourceId}`,
+          error: `未找到指定的视频�? ${resourceId}`,
           result: null,
         },
         { status: 404 }
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
     if (result.length === 0) {
       return NextResponse.json(
         {
-          error: '未找到结果',
+          error: '未找到结�?,
           result: null,
         },
         { status: 404 }
