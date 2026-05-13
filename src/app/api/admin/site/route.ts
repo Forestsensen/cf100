@@ -74,7 +74,8 @@ export async function POST(request: NextRequest) {
 
     // 权限校验
     if (username !== process.env.USERNAME) {
-      // 管理�?      const user = adminConfig.UserConfig.Users.find(
+      // 管理员
+      const user = adminConfig.UserConfig.Users.find(
         (u) => u.username === username
       );
       if (!user || user.role !== 'admin' || user.banned) {
@@ -97,13 +98,15 @@ export async function POST(request: NextRequest) {
       EnableWebLive: EnableWebLive ?? false,
     };
 
-    // 写入数据�?    await db.saveAdminConfig(adminConfig);
+    // 写入数据库
+    await db.saveAdminConfig(adminConfig);
 
     return NextResponse.json(
       { ok: true },
       {
         headers: {
-          'Cache-Control': 'no-store', // 不缓存结�?        },
+          'Cache-Control': 'no-store', // 不缓存结果
+        },
       }
     );
   } catch (error) {

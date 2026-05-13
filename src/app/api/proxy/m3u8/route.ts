@@ -45,7 +45,8 @@ export async function GET(request: Request) {
     const contentType = response.headers.get('Content-Type') || '';
     // rewrite m3u8
     if (contentType.toLowerCase().includes('mpegurl') || contentType.toLowerCase().includes('octet-stream')) {
-      // 获取最终的响应URL（处理重定向后的URL�?      const finalUrl = response.url;
+      // 获取最终的响应URL（处理重定向后的URL）
+      const finalUrl = response.url;
       const m3u8Content = await response.text();
       responseUsed = true; // 标记 response 已被使用
 
@@ -73,7 +74,8 @@ export async function GET(request: Request) {
     headers.set('Cache-Control', 'no-cache');
     headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
 
-    // 直接返回视频�?    return new Response(response.body, {
+    // 直接返回视频流
+    return new Response(response.body, {
       status: 200,
       headers,
     });
@@ -93,7 +95,8 @@ export async function GET(request: Request) {
 }
 
 function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allowCORS: boolean) {
-  // �?referer 头提取协议信�?  const referer = req.headers.get('referer');
+  // 从 referer 头提取协议信息
+  const referer = req.headers.get('referer');
   let protocol = 'http';
   if (referer) {
     try {
@@ -113,7 +116,8 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i].trim();
 
-    // 处理 TS 片段 URL 和其他媒体文�?    if (line && !line.startsWith('#')) {
+    // 处理 TS 片段 URL 和其他媒体文件
+    if (line && !line.startsWith('#')) {
       const resolvedUrl = resolveUrl(baseUrl, line);
       const proxyUrl = allowCORS ? resolvedUrl : `${proxyBase}/segment?url=${encodeURIComponent(resolvedUrl)}`;
       rewrittenLines.push(proxyUrl);
@@ -130,10 +134,10 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
       line = rewriteKeyUri(line, baseUrl, proxyBase);
     }
 
-    // 处理嵌套�?M3U8 文件 (EXT-X-STREAM-INF)
+    // 处理嵌套的 M3U8 文件 (EXT-X-STREAM-INF)
     if (line.startsWith('#EXT-X-STREAM-INF:')) {
       rewrittenLines.push(line);
-      // 下一行通常�?M3U8 URL
+      // 下一行通常是 M3U8 URL
       if (i + 1 < lines.length) {
         i++;
         const nextLine = lines[i].trim();

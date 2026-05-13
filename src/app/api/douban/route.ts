@@ -27,21 +27,21 @@ export async function GET(request: Request) {
   // 验证参数
   if (!type || !tag) {
     return NextResponse.json(
-      { error: '缺少必要参数: type �?tag' },
+      { error: '缺少必要参数: type 或 tag' },
       { status: 400 }
     );
   }
 
   if (!['tv', 'movie'].includes(type)) {
     return NextResponse.json(
-      { error: 'type 参数必须�?tv �?movie' },
+      { error: 'type 参数必须是 tv 或 movie' },
       { status: 400 }
     );
   }
 
   if (pageSize < 1 || pageSize > 100) {
     return NextResponse.json(
-      { error: 'pageSize 必须�?1-100 之间' },
+      { error: 'pageSize 必须在 1-100 之间' },
       { status: 400 }
     );
   }
@@ -124,7 +124,8 @@ function handleTop250(pageStart: number) {
       // 获取 HTML 内容
       const html = await fetchResponse.text();
 
-      // 通过正则同时捕获影片 id、标题、封面以及评�?      const moviePattern =
+      // 通过正则同时捕获影片 id、标题、封面以及评分
+      const moviePattern =
         /<div class="item">[\s\S]*?<a[^>]+href="https?:\/\/movie\.douban\.com\/subject\/(\d+)\/"[\s\S]*?<img[^>]+alt="([^"]+)"[^>]*src="([^"]+)"[\s\S]*?<span class="rating_num"[^>]*>([^<]*)<\/span>[\s\S]*?<\/div>/g;
       const movies: DoubanItem[] = [];
       let match;
@@ -135,7 +136,7 @@ function handleTop250(pageStart: number) {
         const cover = match[3];
         const rate = match[4] || '';
 
-        // 处理图片 URL，确保使�?HTTPS
+        // 处理图片 URL，确保使用 HTTPS
         const processedCover = cover.replace(/^http:/, 'https:');
 
         movies.push({

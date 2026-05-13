@@ -8,14 +8,15 @@ export const runtime = 'edge';
 
 export async function POST(request: NextRequest) {
   try {
-    // 权限检查：仅站长可以拉取配置订�?    const authInfo = getAuthInfoFromCookie(request);
+    // 权限检查：仅站长可以拉取配置订阅
+    const authInfo = getAuthInfoFromCookie(request);
     if (!authInfo || !authInfo.username) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     if (authInfo.username !== process.env.USERNAME) {
       return NextResponse.json(
-        { error: '权限不足，只有站长可以拉取配置订�? },
+        { error: '权限不足，只有站长可以拉取配置订阅' },
         { status: 401 }
       );
     }
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     const configContent = await response.text();
 
-    // �?configContent 进行 base58 解码
+    // 对 configContent 进行 base58 解码
     let decodedContent;
     try {
       const bs58 = (await import('bs58')).default;

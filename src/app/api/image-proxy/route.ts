@@ -36,7 +36,8 @@ export async function GET(request: Request) {
       );
     }
 
-    // 创建响应�?    const headers = new Headers();
+    // 创建响应头
+    const headers = new Headers();
     if (contentType) {
       headers.set('Content-Type', contentType);
     }
@@ -47,7 +48,8 @@ export async function GET(request: Request) {
     headers.set('Vercel-CDN-Cache-Control', 'public, s-maxage=15720000');
     headers.set('Netlify-Vary', 'query');
 
-    // 直接返回图片�?    return new Response(imageResponse.body, {
+    // 直接返回图片流
+    return new Response(imageResponse.body, {
       status: 200,
       headers,
     });

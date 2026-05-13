@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const tvgId = searchParams.get('tvgId');
 
     if (!sourceKey) {
-      return NextResponse.json({ error: '缺少直播源参�? }, { status: 400 });
+      return NextResponse.json({ error: '缺少直播源参数' }, { status: 400 });
     }
 
     if (!tvgId) {
@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
     const channelData = await getCachedLiveChannels(sourceKey);
 
     if (!channelData) {
-      // 频道信息未找到时返回空的节目单数�?      return NextResponse.json({
+      // 频道信息未找到时返回空的节目单数据
+      return NextResponse.json({
         success: true,
         data: {
           tvgId,
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: '获取节目单信息失�? },
+      { error: '获取节目单信息失败' },
       { status: 500 }
     );
   }
