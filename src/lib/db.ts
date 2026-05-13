@@ -1,16 +1,18 @@
 /* eslint-disable no-console, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
 import { AdminConfig } from './admin.types';
+import { D1Storage } from './d1.db';
 import { KvrocksStorage } from './kvrocks.db';
 import { RedisStorage } from './redis.db';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 import { UpstashRedisStorage } from './upstash.db';
 
-// storage type 常量: 'localstorage' | 'redis' | 'upstash'，默认 'localstorage'
+// storage type 常量: 'localstorage' | 'redis' | 'd1' | 'upstash' | 'kvrocks'，默认 'localstorage'
 const STORAGE_TYPE =
   (process.env.NEXT_PUBLIC_STORAGE_TYPE as
     | 'localstorage'
     | 'redis'
+    | 'd1'
     | 'upstash'
     | 'kvrocks'
     | undefined) || 'localstorage';
@@ -24,6 +26,8 @@ function createStorage(): IStorage {
       return new UpstashRedisStorage();
     case 'kvrocks':
       return new KvrocksStorage();
+    case 'd1':
+      return new D1Storage();
     case 'localstorage':
     default:
       return null as unknown as IStorage;
