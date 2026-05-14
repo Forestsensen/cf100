@@ -1,9 +1,9 @@
 /* eslint-disable no-console,@typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 
+import { getOwnerPassword, getOwnerUsername } from '@/lib/cf-env';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
-
 export const runtime = 'edge';
 
 // 读取存储类型环境变量，默认 localstorage
@@ -56,10 +56,10 @@ async function generateAuthCookie(
     authData.password = password;
   }
 
-  if (username && process.env.PASSWORD) {
+  if (username && password) {
     authData.username = username;
     // 使用密码作为密钥对用户名进行签名
-    const signature = await generateSignature(username, process.env.PASSWORD);
+    const signature = await generateSignature(username, password);
     authData.signature = signature;
     authData.timestamp = Date.now(); // 添加时间戳防重放攻击
   }
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
   try {
     // 本地 / localStorage 模式——仅校验固定密码
     if (STORAGE_TYPE === 'localstorage') {
-      const envPassword = process.env.PASSWORD;
+      const envPassword = await getOwnerPassword();
 
       // 未配置 PASSWORD 时直接放行
       if (!envPassword) {
@@ -133,10 +133,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
     }
 
+    // 通过 getRequestContext 获取环境变量（Cloudflare Edge Runtime）
+    const envUsername = await getOwnerUsername();
+    const envPassword = await getOwnerPassword();
+
     // 可能是站长，直接读环境变量
     if (
-      username === process.env.USERNAME &&
-      password === process.env.PASSWORD
+      envUsername &&
+      username === envUsername &&
+      envPassword &&
+      password === envPassword
     ) {
       // 验证成功，设置认证cookie
       const response = NextResponse.json({ ok: true });
@@ -158,7 +164,7 @@ export async function POST(req: NextRequest) {
       });
 
       return response;
-    } else if (username === process.env.USERNAME) {
+    } else if (envUsername && username === envUsername) {
       return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
     }
 

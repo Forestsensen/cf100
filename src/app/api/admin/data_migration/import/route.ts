@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getOwnerUsername } from '@/lib/cf-env';
 import { configSelfCheck, setCachedConfig } from '@/lib/config';
 import { SimpleCrypto } from '@/lib/crypto';
 import { db } from '@/lib/db';
@@ -40,8 +41,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
+    const ownerUsername = await getOwnerUsername();
+
     // 检查用户权限（只有站长可以导入数据）
-    if (authInfo.username !== process.env.USERNAME) {
+    if (authInfo.username !== ownerUsername) {
       return NextResponse.json({ error: '权限不足，只有站长可以导入数据' }, { status: 401 });
     }
 
@@ -94,7 +97,7 @@ export async function POST(req: NextRequest) {
     await db.clearAllData();
 
     // 导入管理员配置
-    importData.data.adminConfig = configSelfCheck(importData.data.adminConfig);
+    importData.data.adminConfig = await configSelfCheck(importData.data.adminConfig);
     await db.saveAdminConfig(importData.data.adminConfig);
     await setCachedConfig(importData.data.adminConfig);
 

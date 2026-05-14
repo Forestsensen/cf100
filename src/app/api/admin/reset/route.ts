@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getOwnerUsername } from '@/lib/cf-env';
 import { resetConfig } from '@/lib/config';
 
 export const runtime = 'edge';
@@ -23,8 +24,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const username = authInfo.username;
+  const ownerUsername = await getOwnerUsername();
 
-  if (username !== process.env.USERNAME) {
+  if (username !== ownerUsername) {
     return NextResponse.json({ error: '仅支持站长重置配置' }, { status: 401 });
   }
 

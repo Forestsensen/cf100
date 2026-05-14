@@ -3,10 +3,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getOwnerUsername } from '@/lib/cf-env';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { PlayRecord } from '@/lib/types';
-
 export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
@@ -17,8 +17,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const ownerUsername = await getOwnerUsername();
     const config = await getConfig();
-    if (authInfo.username !== process.env.USERNAME) {
+    if (authInfo.username !== ownerUsername) {
       // 非站长，检查用户存在或被封禁
       const user = config.UserConfig.Users.find(
         (u) => u.username === authInfo.username
@@ -50,8 +51,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const ownerUsername = await getOwnerUsername();
     const config = await getConfig();
-    if (authInfo.username !== process.env.USERNAME) {
+    if (authInfo.username !== ownerUsername) {
       // 非站长，检查用户存在或被封禁
       const user = config.UserConfig.Users.find(
         (u) => u.username === authInfo.username
@@ -116,8 +118,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const ownerUsername = await getOwnerUsername();
     const config = await getConfig();
-    if (authInfo.username !== process.env.USERNAME) {
+    if (authInfo.username !== ownerUsername) {
       // 非站长，检查用户存在或被封禁
       const user = config.UserConfig.Users.find(
         (u) => u.username === authInfo.username

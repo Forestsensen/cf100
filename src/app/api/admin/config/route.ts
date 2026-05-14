@@ -4,8 +4,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getOwnerUsername } from '@/lib/cf-env';
 import { getConfig } from '@/lib/config';
-
 export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const username = authInfo.username;
+  const ownerUsername = await getOwnerUsername();
 
   try {
     const config = await getConfig();
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
       Role: 'owner',
       Config: config,
     };
-    if (username === process.env.USERNAME) {
+    if (username === ownerUsername) {
       result.Role = 'owner';
     } else {
       const user = config.UserConfig.Users.find((u) => u.username === username);

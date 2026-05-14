@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getOwnerPassword } from '@/lib/cf-env';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -14,7 +15,10 @@ export async function middleware(request: NextRequest) {
 
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
 
-  if (!process.env.PASSWORD) {
+  // 通过 getRequestContext 获取密码（兼容 Cloudflare Edge Runtime）
+  const envPassword = await getOwnerPassword();
+
+  if (!envPassword) {
     // 如果没有设置密码，重定向到警告页面
     const warningUrl = new URL('/warning', request.url);
     return NextResponse.redirect(warningUrl);
@@ -29,7 +33,7 @@ export async function middleware(request: NextRequest) {
 
   // localstorage模式：在middleware中完成验证
   if (storageType === 'localstorage') {
-    if (!authInfo.password || authInfo.password !== process.env.PASSWORD) {
+    if (!authInfo.password || authInfo.password !== envPassword) {
       return handleAuthFailure(request, pathname);
     }
     return NextResponse.next();
@@ -46,7 +50,7 @@ export async function middleware(request: NextRequest) {
     const isValidSignature = await verifySignature(
       authInfo.username,
       authInfo.signature,
-      process.env.PASSWORD || ''
+      envPassword
     );
 
     // 签名验证通过即可

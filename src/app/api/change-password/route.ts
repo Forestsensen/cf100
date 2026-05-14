@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getOwnerUsername } from '@/lib/cf-env';
 import { db } from '@/lib/db';
 
 export const runtime = 'edge';
@@ -36,9 +37,10 @@ export async function POST(request: NextRequest) {
     }
 
     const username = authInfo.username;
+    const ownerUsername = await getOwnerUsername();
 
     // 不允许站长修改密码（站长用户名等于 process.env.USERNAME）
-    if (username === process.env.USERNAME) {
+    if (username === ownerUsername) {
       return NextResponse.json(
         { error: '站长不能通过此接口修改密码' },
         { status: 403 }

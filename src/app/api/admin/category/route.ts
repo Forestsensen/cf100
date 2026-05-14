@@ -3,9 +3,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getOwnerUsername } from '@/lib/cf-env';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
-
 export const runtime = 'edge';
 
 // 支持的操作类型
@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const username = authInfo.username;
+    const ownerUsername = await getOwnerUsername();
 
     // 基础校验
     const ACTIONS: Action[] = ['add', 'disable', 'enable', 'delete', 'sort'];
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
     const adminConfig = await getConfig();
 
     // 权限与身份校验
-    if (username !== process.env.USERNAME) {
+    if (username !== ownerUsername) {
       const userEntry = adminConfig.UserConfig.Users.find(
         (u) => u.username === username
       );

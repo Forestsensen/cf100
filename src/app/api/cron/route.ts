@@ -2,12 +2,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { getOwnerUsername } from '@/lib/cf-env';
 import { getConfig, refineConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { refreshLiveChannels } from '@/lib/live';
 import { SearchResult } from '@/lib/types';
-
 export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
@@ -48,13 +48,16 @@ async function refreshAllLiveChannels() {
 
   // 并发刷新所有启用的直播源
   const refreshPromises = (config.LiveConfig || [])
-    .filter(liveInfo => !liveInfo.disabled)
+    .filter((liveInfo) => !liveInfo.disabled)
     .map(async (liveInfo) => {
       try {
         const nums = await refreshLiveChannels(liveInfo);
         liveInfo.channelNumber = nums;
       } catch (error) {
-        console.error(`刷新直播源失败 [${liveInfo.name || liveInfo.key}]:`, error);
+        console.error(
+          `刷新直播源失败 [${liveInfo.name || liveInfo.key}]:`,
+          error
+        );
         liveInfo.channelNumber = 0;
       }
     });
@@ -68,7 +71,12 @@ async function refreshAllLiveChannels() {
 
 async function refreshConfig() {
   let config = await getConfig();
-  if (config && config.ConfigSubscribtion && config.ConfigSubscribtion.URL && config.ConfigSubscribtion.AutoUpdate) {
+  if (
+    config &&
+    config.ConfigSubscribtion &&
+    config.ConfigSubscribtion.URL &&
+    config.ConfigSubscribtion.AutoUpdate
+  ) {
     try {
       const response = await fetch(config.ConfigSubscribtion.URL);
 
@@ -109,8 +117,9 @@ async function refreshConfig() {
 async function refreshRecordAndFavorites() {
   try {
     const users = await db.getAllUsers();
-    if (process.env.USERNAME && !users.includes(process.env.USERNAME)) {
-      users.push(process.env.USERNAME);
+    const ownerUsername = await getOwnerUsername();
+    if (ownerUsername && !users.includes(ownerUsername)) {
+      users.push(ownerUsername);
     }
     // 函数级缓存：key 为 `${source}+${id}`，值为 Promise<VideoDetail | null>
     const detailCache = new Map<string, Promise<SearchResult | null>>();
@@ -156,7 +165,11 @@ async function refreshRecordAndFavorites() {
           results[i] = await tasks[i]();
         }
       };
-      await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker()));
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, tasks.length) }, () =>
+          worker()
+        )
+      );
       return results;
     };
 

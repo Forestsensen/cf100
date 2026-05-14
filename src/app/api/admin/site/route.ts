@@ -3,9 +3,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getOwnerUsername } from '@/lib/cf-env';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
-
 export const runtime = 'edge';
 
 export async function POST(request: NextRequest) {
@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const username = authInfo.username;
+    const ownerUsername = await getOwnerUsername();
 
     const {
       SiteName,
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
     const adminConfig = await getConfig();
 
     // 权限校验
-    if (username !== process.env.USERNAME) {
+    if (username !== ownerUsername) {
       // 管理员
       const user = adminConfig.UserConfig.Users.find(
         (u) => u.username === username

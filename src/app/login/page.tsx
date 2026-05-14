@@ -4,14 +4,13 @@
 
 import { AlertCircle, CheckCircle } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 
 import { CURRENT_VERSION } from '@/lib/version';
 import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
 
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
-
 
 export const runtime = 'edge';
 // 版本显示组件
@@ -44,12 +43,13 @@ function VersionDisplay() {
       <span className='font-mono'>v{CURRENT_VERSION}</span>
       {!isChecking && updateStatus !== UpdateStatus.FETCH_FAILED && (
         <div
-          className={`flex items-center gap-1.5 ${updateStatus === UpdateStatus.HAS_UPDATE
-            ? 'text-yellow-600 dark:text-yellow-400'
-            : updateStatus === UpdateStatus.NO_UPDATE
+          className={`flex items-center gap-1.5 ${
+            updateStatus === UpdateStatus.HAS_UPDATE
+              ? 'text-yellow-600 dark:text-yellow-400'
+              : updateStatus === UpdateStatus.NO_UPDATE
               ? 'text-green-600 dark:text-green-400'
               : ''
-            }`}
+          }`}
         >
           {updateStatus === UpdateStatus.HAS_UPDATE && (
             <>
@@ -69,6 +69,23 @@ function VersionDisplay() {
   );
 }
 
+/**
+ * 从 DOM 中读取 storage type。
+ * 优先读取 <body data-storage-type="..."> 属性（由 layout.tsx 服务端渲染注入），
+ * 回退到 window.RUNTIME_CONFIG.STORAGE_TYPE。
+ * 两种方式都不依赖 React useEffect 调度，在 Edge Runtime 下更可靠。
+ */
+function getStorageType(): string {
+  if (typeof document !== 'undefined') {
+    const bodyType = document.body?.getAttribute('data-storage-type');
+    if (bodyType) return bodyType;
+  }
+  if (typeof window !== 'undefined') {
+    return (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
+  }
+  return 'localstorage';
+}
+
 function LoginPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -80,13 +97,33 @@ function LoginPageClient() {
 
   const { siteName } = useSite();
 
-  // 在客户端挂载后设置配置
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storageType = (window as any).RUNTIME_CONFIG?.STORAGE_TYPE;
-      setShouldAskUsername(storageType && storageType !== 'localstorage');
+  // 使用 requestAnimationFrame + 多重 fallback 确保 RUNTIME_CONFIG 就绪后再读取
+  // 在 @cloudflare/next-on-pages Edge Runtime 下，useEffect 可能存在调度延迟
+  const checkStorageType = useCallback(() => {
+    const storageType = getStorageType();
+    if (storageType && storageType !== 'localstorage') {
+      setShouldAskUsername(true);
+      return true;
     }
+    return false;
   }, []);
+
+  useEffect(() => {
+    // 立即尝试一次
+    if (checkStorageType()) return;
+
+    // 如果立即读取失败，用 rAF 在下一帧重试（确保 DOM 和 scripts 已解析）
+    const rafId = requestAnimationFrame(() => {
+      if (checkStorageType()) return;
+
+      // 再用 setTimeout 作为最后兜底
+      setTimeout(() => {
+        checkStorageType();
+      }, 0);
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [checkStorageType]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -170,9 +207,7 @@ function LoginPageClient() {
           {/* 登录按钮 */}
           <button
             type='submit'
-            disabled={
-              !password || loading || (shouldAskUsername && !username)
-            }
+            disabled={!password || loading || (shouldAskUsername && !username)}
             className='inline-flex w-full justify-center rounded-lg bg-green-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 hover:from-green-600 hover:to-blue-600 disabled:cursor-not-allowed disabled:opacity-50'
           >
             {loading ? '登录中...' : '登录'}

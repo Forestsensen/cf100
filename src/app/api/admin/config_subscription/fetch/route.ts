@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getOwnerUsername } from '@/lib/cf-env';
 
 export const runtime = 'edge';
 
@@ -13,8 +14,9 @@ export async function POST(request: NextRequest) {
     if (!authInfo || !authInfo.username) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    const ownerUsername = await getOwnerUsername();
 
-    if (authInfo.username !== process.env.USERNAME) {
+    if (authInfo.username !== ownerUsername) {
       return NextResponse.json(
         { error: '权限不足，只有站长可以拉取配置订阅' },
         { status: 401 }
