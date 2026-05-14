@@ -169,6 +169,8 @@ MoonTV 在 Cloudflare Pages 上推荐使用 **D1 数据库**（Cloudflare 原生
 
 在 Cloudflare Pages 项目的 **Settings** → **Environment variables** 中，添加所有必要的环境变量：
 
+> ⚠️ **关键提示**：`NEXT_PUBLIC_STORAGE_TYPE` 必须**在首次构建前**设置，因为它会在构建时被嵌入前端代码。如果构建后才添加，需要重新触发部署才能生效。
+
 **必填变量：**
 
 | 变量名 | 说明 | 示例 |
@@ -195,9 +197,24 @@ MoonTV 在 Cloudflare Pages 上推荐使用 **D1 数据库**（Cloudflare 原生
 
 构建成功后，点击 Cloudflare 提供的 `*.pages.dev` 域名访问你的站点。
 
-1. 使用设置的 `USERNAME` 和 `PASSWORD` 登录
-2. 进入管理后台，填写配置文件（API 资源站地址）
-3. 测试搜索、播放、收藏功能是否正常
+1. **检查登录界面**：如果看到**用户名+密码**两个输入框，说明 D1 模式已生效；如果只有密码输入框，说明 `NEXT_PUBLIC_STORAGE_TYPE` 未生效，请检查环境变量并重新部署。
+2. 使用设置的 `USERNAME` 和 `PASSWORD` 登录
+3. 进入管理后台，填写配置文件（API 资源站地址）
+4. 测试搜索、播放、收藏功能是否正常
+
+---
+
+### 🔐 登录密码错误排查
+
+如果部署后提示"密码错误"，请按以下顺序排查：
+
+| 现象 | 原因 | 解决方案 |
+| --- | --- | --- |
+| 登录界面只有密码框，没有用户名框 | `NEXT_PUBLIC_STORAGE_TYPE` 未生效，前端以 `localstorage` 模式运行 | 检查环境变量中 `NEXT_PUBLIC_STORAGE_TYPE=d1` 是否设置，**重新触发部署** |
+| 有用户名+密码框，但提示密码错误 | 输入的密码与 `PASSWORD` 环境变量不一致 | 检查 Cloudflare Pages 环境变量中的 `PASSWORD` 值 |
+| 有用户名+密码框，站长账号登录失败 | `USERNAME` 和 `PASSWORD` 环境变量未设置 | 检查并设置这两个环境变量，重新部署 |
+
+**重要**：`NEXT_PUBLIC_` 前缀的变量在 Next.js 中是在**构建时**嵌入前端的，不是运行时读取的。修改后必须重新构建才能生效。
 
 ---
 
@@ -220,22 +237,11 @@ MoonTV 在 Cloudflare Pages 上推荐使用 **D1 数据库**（Cloudflare 原生
 在 Cloudflare D1 中执行以下 SQL 来创建所需的表：
 
 ```sql
--- 管理员配置表
-CREATE TABLE IF NOT EXISTS admin_config (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-
--- 用户密码表
-CREATE TABLE IF NOT EXISTS user_passwords (
-  username TEXT PRIMARY KEY,
-  password TEXT NOT NULL
-);
-
--- 用户集合（用于快速查询所有用户）
+-- 用户表（包含密码，created_at 使用 strftime 兼容 D1）
 CREATE TABLE IF NOT EXISTS users (
   username TEXT PRIMARY KEY,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  password TEXT NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 
 -- 播放记录表
@@ -243,7 +249,16 @@ CREATE TABLE IF NOT EXISTS play_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL,
   key TEXT NOT NULL,
-  value TEXT NOT NULL,
+  title TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  cover TEXT NOT NULL,
+  year TEXT NOT NULL,
+  index_episode INTEGER NOT NULL,
+  total_episodes INTEGER NOT NULL,
+  play_time INTEGER NOT NULL,
+  total_time INTEGER NOT NULL,
+  save_time INTEGER NOT NULL,
+  search_title TEXT,
   UNIQUE(username, key)
 );
 
@@ -252,7 +267,12 @@ CREATE TABLE IF NOT EXISTS favorites (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL,
   key TEXT NOT NULL,
-  value TEXT NOT NULL,
+  title TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  cover TEXT NOT NULL,
+  year TEXT NOT NULL,
+  total_episodes INTEGER NOT NULL,
+  save_time INTEGER NOT NULL,
   UNIQUE(username, key)
 );
 
@@ -261,17 +281,43 @@ CREATE TABLE IF NOT EXISTS search_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL,
   keyword TEXT NOT NULL,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+  UNIQUE(username, keyword)
+);
+
+-- 管理员配置表（代码中使用 id=1, config 列）
+CREATE TABLE IF NOT EXISTS admin_config (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  config TEXT NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 
 -- 跳过配置表（片头片尾）
 CREATE TABLE IF NOT EXISTS skip_configs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL,
-  key TEXT NOT NULL,
-  value TEXT NOT NULL,
-  UNIQUE(username, key)
+  source TEXT NOT NULL,
+  id_video TEXT NOT NULL,
+  enable INTEGER NOT NULL DEFAULT 0,
+  intro_time INTEGER NOT NULL DEFAULT 0,
+  outro_time INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(username, source, id_video)
 );
+
+-- 基本索引
+CREATE INDEX IF NOT EXISTS idx_play_records_username ON play_records(username);
+CREATE INDEX IF NOT EXISTS idx_favorites_username ON favorites(username);
+CREATE INDEX IF NOT EXISTS idx_search_history_username ON search_history(username);
+
+-- 复合索引优化查询性能
+CREATE INDEX IF NOT EXISTS idx_play_records_username_key ON play_records(username, key);
+CREATE INDEX IF NOT EXISTS idx_play_records_username_save_time ON play_records(username, save_time DESC);
+CREATE INDEX IF NOT EXISTS idx_favorites_username_key ON favorites(username, key);
+CREATE INDEX IF NOT EXISTS idx_favorites_username_save_time ON favorites(username, save_time DESC);
+CREATE INDEX IF NOT EXISTS idx_search_history_username_keyword ON search_history(username, keyword);
+CREATE INDEX IF NOT EXISTS idx_search_history_username_created_at ON search_history(username, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_skip_configs_username_source_id ON skip_configs(username, source, id_video);
+CREATE INDEX IF NOT EXISTS idx_search_history_username_id_created_at ON search_history(username, id, created_at DESC);
 ```
 
 将以上 SQL 保存为 `d1-init.sql`，然后通过 Wrangler 执行：
