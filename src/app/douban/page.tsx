@@ -8,8 +8,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { GetBangumiCalendarData } from '@/lib/bangumi.client';
 import {
-
-export const runtime = 'edge';
   getDoubanCategories,
   getDoubanList,
   getDoubanRecommends,
@@ -23,6 +21,7 @@ import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
 import VirtualGrid from '@/components/VirtualGrid';
 
+export const runtime = 'edge';
 function DoubanPageClient() {
   const searchParams = useSearchParams();
   const [doubanData, setDoubanData] = useState<DoubanItem[]>([]);

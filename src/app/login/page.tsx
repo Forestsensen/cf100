@@ -12,9 +12,9 @@ import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
-// 版本显示组件
 
 export const runtime = 'edge';
+// 版本显示组件
 function VersionDisplay() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [isChecking, setIsChecking] = useState(true);
@@ -120,8 +120,6 @@ function LoginPageClient() {
       setLoading(false);
     }
   };
-
-
 
   return (
     <div className='relative min-h-screen flex items-center justify-center px-4 overflow-hidden'>

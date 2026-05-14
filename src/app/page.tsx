@@ -7,11 +7,11 @@ import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 
 import {
-
-export const runtime = 'edge';
   BangumiCalendarData,
   GetBangumiCalendarData,
 } from '@/lib/bangumi.client';
+
+export const runtime = 'edge';
 // 客户端收藏 API
 import {
   clearAllFavorites,
@@ -28,7 +28,6 @@ import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
-
 function HomeClient() {
   const [activeTab, setActiveTab] = useState<'home' | 'favorites'>('home');
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);

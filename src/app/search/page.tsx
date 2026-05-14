@@ -6,8 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import React, { startTransition, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-
-export const runtime = 'edge';
   addSearchHistory,
   clearSearchHistory,
   deleteSearchHistory,
@@ -22,6 +20,7 @@ import SearchSuggestions from '@/components/SearchSuggestions';
 import VideoCard, { VideoCardHandle } from '@/components/VideoCard';
 import VirtualGrid from '@/components/VirtualGrid';
 
+export const runtime = 'edge';
 function SearchPageClient() {
   // 搜索历史
   const [searchHistory, setSearchHistory] = useState<string[]>([]);

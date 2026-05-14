@@ -3,8 +3,6 @@
 'use client';
 
 import {
-
-export const runtime = 'edge';
   closestCenter,
   DndContext,
   PointerSensor,
@@ -49,6 +47,8 @@ import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import DataMigration from '@/components/DataMigration';
 import PageLayout from '@/components/PageLayout';
 
+
+export const runtime = 'edge';
 // 统一按钮样式系统
 const buttonStyles = {
   // 主要操作按钮（蓝色）- 用于配置、设置、确认等
@@ -674,8 +674,6 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
     });
   };
 
-
-
   // 提取URL域名的辅助函数
   const extractDomain = (url: string): string => {
     try {
@@ -795,8 +793,6 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
           </div>
         </div>
       </div>
-
-
 
       {/* 用户组管理 */}
       <div>
@@ -1726,8 +1722,6 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                 </p>
               </div>
 
-
-
               {/* 操作按钮 */}
               <div className='flex justify-end space-x-3'>
                 <button
@@ -2016,7 +2010,6 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
       />
-
 
     </div>
   );
@@ -2624,8 +2617,6 @@ const VideoSourceConfig = ({
         </div>
       )}
 
-
-
       {/* 视频源表格 */}
       <div className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative' data-table="source-list">
         <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
@@ -3158,8 +3149,6 @@ const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | 
   const [autoUpdate, setAutoUpdate] = useState(false);
   const [lastCheckTime, setLastCheckTime] = useState<string>('');
 
-
-
   useEffect(() => {
     if (config?.ConfigFile) {
       setConfigContent(config.ConfigFile);
@@ -3170,8 +3159,6 @@ const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | 
       setLastCheckTime(config.ConfigSubscribtion.LastCheck || '');
     }
   }, [config]);
-
-
 
   // 拉取订阅配置
   const handleFetchConfig = async () => {
@@ -3238,8 +3225,6 @@ const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | 
       }
     });
   };
-
-
 
   if (!config) {
     return (
@@ -3946,7 +3931,6 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         </p>
       </div>
 
-
       {/* 操作按钮 */}
       <div className='flex justify-end'>
         <button
@@ -4522,7 +4506,6 @@ const LiveSourceConfig = ({
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
       />
-
 
     </div>
   );
