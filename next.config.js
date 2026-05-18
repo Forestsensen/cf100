@@ -1,9 +1,6 @@
 /** @type {import('next').NextConfig} */
-/* eslint-disable @typescript-eslint/no-var-requires */
 
 const nextConfig = {
-// output: 'standalone' is incompatible with Cloudflare Pages (which uses edge workers)
-// Removed for CF Pages deployment
   eslint: {
     dirs: ['src'],
   },
@@ -11,12 +8,6 @@ const nextConfig = {
   reactStrictMode: false,
   swcMinify: false,
 
-  // instrumentationHook requires Node.js runtime, disabled for CF Pages (edge)
-  // experimental: {
-  //   instrumentationHook: process.env.NODE_ENV === 'production',
-  // },
-
-  // Uncoment to add domain whitelist
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -71,11 +62,4 @@ const nextConfig = {
   },
 };
 
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  disable: process.env.NODE_ENV === 'development',
-  register: true,
-  skipWaiting: true,
-});
-
-module.exports = withPWA(nextConfig);
+module.exports = nextConfig;

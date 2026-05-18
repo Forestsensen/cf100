@@ -3,34 +3,16 @@
 import { AdminConfig } from './admin.types';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 
-// storage type 常量: 'localstorage' | 'redis' | 'd1' | 'upstash' | 'kvrocks'，默认 'localstorage'
+// storage type: 'localstorage' | 'd1'，默认 'localstorage'
 const STORAGE_TYPE =
   (process.env.NEXT_PUBLIC_STORAGE_TYPE as
     | 'localstorage'
-    | 'redis'
     | 'd1'
-    | 'upstash'
-    | 'kvrocks'
     | undefined) || 'localstorage';
 
-// 创建存储实例（使用动态 import 以兼容 Edge Runtime）
+// 创建存储实例
 async function createStorageAsync(): Promise<IStorage> {
   switch (STORAGE_TYPE) {
-    case 'redis': {
-      // @ts-expect-error redis 模块不兼容 Edge Runtime，仅 Node.js 部署可用
-      const { RedisStorage } = await import('./redis.db');
-      return new RedisStorage();
-    }
-    case 'upstash': {
-      // @ts-expect-error upstash 模块类型声明在 CF Pages 构建中可能不可用
-      const { UpstashRedisStorage } = await import('./upstash.db');
-      return new UpstashRedisStorage();
-    }
-    case 'kvrocks': {
-      // @ts-expect-error kvrocks 模块依赖 redis npm 包，不兼容 Edge Runtime
-      const { KvrocksStorage } = await import('./kvrocks.db');
-      return new KvrocksStorage();
-    }
     case 'd1': {
       // @ts-expect-error d1 模块类型声明在 CF Pages 构建中可能不可用
       const { D1Storage } = await import('./d1.db');
