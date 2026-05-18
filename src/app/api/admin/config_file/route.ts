@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getOwnerUsername } from '@/lib/cf-env';
-import { getConfig, refineConfig } from '@/lib/config';
+import { getConfig, refineConfig, saveAndInvalidateConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 export const runtime = 'edge';
 
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     adminConfig = refineConfig(adminConfig);
     // 更新配置文件
-    await db.saveAdminConfig(adminConfig);
+    await saveAndInvalidateConfig(adminConfig);
     return NextResponse.json({
       success: true,
       message: '配置文件更新成功',

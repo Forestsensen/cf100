@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getOwnerUsername } from '@/lib/cf-env';
-import { getConfig } from '@/lib/config';
+import { getConfig, saveAndInvalidateConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { refreshLiveChannels } from '@/lib/live';
 export const runtime = 'edge';
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     await Promise.all(refreshPromises);
 
     // 保存配置
-    await db.saveAdminConfig(config);
+    await saveAndInvalidateConfig(config);
 
     return NextResponse.json({
       success: true,

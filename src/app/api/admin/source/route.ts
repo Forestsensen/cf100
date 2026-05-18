@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getOwnerUsername } from '@/lib/cf-env';
-import { getConfig } from '@/lib/config';
+import { getConfig, saveAndInvalidateConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 export const runtime = 'edge';
 
@@ -254,8 +254,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '未知操作' }, { status: 400 });
     }
 
-    // 持久化到存储
-    await db.saveAdminConfig(adminConfig);
+    // 持久化到存储并清除缓存
+    await saveAndInvalidateConfig(adminConfig);
 
     return NextResponse.json(
       { ok: true },

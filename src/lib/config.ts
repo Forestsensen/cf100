@@ -56,6 +56,17 @@ export const API_CONFIG = {
 // 在模块加载时根据环境决定配置来源
 let cachedConfig: AdminConfig;
 
+/** 清除配置缓存，下次 getConfig() 会从 D1 重新读取 */
+export function invalidateConfigCache(): void {
+  cachedConfig = undefined as unknown as AdminConfig;
+}
+
+/** 保存管理员配置并清除缓存，确保下次读取获取最新数据 */
+export async function saveAndInvalidateConfig(config: AdminConfig): Promise<void> {
+  cachedConfig = undefined as unknown as AdminConfig;
+  await db.saveAdminConfig(config);
+}
+
 // 从配置文件补充管理员配置
 export function refineConfig(adminConfig: AdminConfig): AdminConfig {
   let fileConfig: ConfigFileStruct;

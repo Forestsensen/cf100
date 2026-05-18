@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getOwnerUsername } from '@/lib/cf-env';
-import { getConfig, refineConfig } from '@/lib/config';
+import { getConfig, refineConfig, saveAndInvalidateConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { refreshLiveChannels } from '@/lib/live';
@@ -66,7 +66,7 @@ async function refreshAllLiveChannels() {
   await Promise.all(refreshPromises);
 
   // 保存配置
-  await db.saveAdminConfig(config);
+  await saveAndInvalidateConfig(config);
 }
 
 async function refreshConfig() {
@@ -105,7 +105,7 @@ async function refreshConfig() {
       config.ConfigFile = decodedContent;
       config.ConfigSubscribtion.LastCheck = new Date().toISOString();
       config = refineConfig(config);
-      await db.saveAdminConfig(config);
+      await saveAndInvalidateConfig(config);
     } catch (e) {
       console.error('刷新配置失败:', e);
     }

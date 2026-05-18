@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getOwnerUsername } from '@/lib/cf-env';
-import { configSelfCheck, setCachedConfig } from '@/lib/config';
+import { configSelfCheck, saveAndInvalidateConfig, setCachedConfig } from '@/lib/config';
 import { SimpleCrypto } from '@/lib/crypto';
 import { db } from '@/lib/db';
 
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     // 导入管理员配置
     importData.data.adminConfig = await configSelfCheck(importData.data.adminConfig);
-    await db.saveAdminConfig(importData.data.adminConfig);
+    await saveAndInvalidateConfig(importData.data.adminConfig);
     await setCachedConfig(importData.data.adminConfig);
 
     // 导入用户数据
