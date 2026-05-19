@@ -3,7 +3,6 @@
 import Link from 'next/link';
 
 import { BackButton } from './BackButton';
-import { useSite } from './SiteProvider';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
 
@@ -12,7 +11,6 @@ interface MobileHeaderProps {
 }
 
 const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
-  const { siteName } = useSite();
   return (
     <header className='md:hidden fixed top-0 left-0 right-0 z-[999] w-full bg-white/70 backdrop-blur-xl border-b border-gray-200/50 shadow-sm dark:bg-gray-900/70 dark:border-gray-700/50'>
       <div className='h-12 flex items-center justify-between px-4'>
@@ -49,11 +47,12 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
 
       {/* 中间：Logo（绝对居中） */}
       <div className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'>
-        <Link
-          href='/'
-          className='text-2xl font-bold text-green-600 tracking-tight hover:opacity-80 transition-opacity'
-        >
-          {siteName}
+        <Link href='/' className='hover:opacity-80 transition-opacity'>
+          <img
+            src='/logo.png'
+            alt='logo'
+            className='h-8 w-auto object-contain'
+          />
         </Link>
       </div>
     </header>

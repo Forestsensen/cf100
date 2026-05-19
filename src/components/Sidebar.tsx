@@ -14,7 +14,6 @@ import {
   useState,
 } from 'react';
 
-import { useSite } from './SiteProvider';
 
 interface SidebarContextType {
   isCollapsed: boolean;
@@ -26,17 +25,18 @@ const SidebarContext = createContext<SidebarContextType>({
 
 export const useSidebar = () => useContext(SidebarContext);
 
-// 可替换为你自己的 logo 图片
+// 使用图片 logo
 const Logo = () => {
-  const { siteName } = useSite();
   return (
     <Link
       href='/'
-      className='flex items-center justify-center h-16 select-none hover:opacity-80 transition-opacity duration-200'
+      className='flex items-center justify-center h-16 select-none hover:opacity-80 transition-opacity duration-200 px-2'
     >
-      <span className='text-2xl font-bold text-green-600 tracking-tight'>
-        {siteName}
-      </span>
+      <img
+        src='/logo.png'
+        alt='logo'
+        className='h-10 w-auto object-contain'
+      />
     </Link>
   );
 };

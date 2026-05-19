@@ -9,7 +9,6 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { CURRENT_VERSION } from '@/lib/version';
 import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
 
-import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 export const runtime = 'edge';
@@ -95,8 +94,6 @@ function LoginPageClient() {
   const [loading, setLoading] = useState(false);
   const [shouldAskUsername, setShouldAskUsername] = useState(false);
 
-  const { siteName } = useSite();
-
   // 使用 requestAnimationFrame + 多重 fallback 确保 RUNTIME_CONFIG 就绪后再读取
   // 在 @cloudflare/next-on-pages Edge Runtime 下，useEffect 可能存在调度延迟
   const checkStorageType = useCallback(() => {
@@ -164,9 +161,13 @@ function LoginPageClient() {
         <ThemeToggle />
       </div>
       <div className='relative z-10 w-full max-w-md rounded-3xl bg-gradient-to-b from-white/90 via-white/70 to-white/40 dark:from-zinc-900/90 dark:via-zinc-900/70 dark:to-zinc-900/40 backdrop-blur-xl shadow-2xl p-10 dark:border dark:border-zinc-800'>
-        <h1 className='text-green-600 tracking-tight text-center text-3xl font-extrabold mb-8 bg-clip-text drop-shadow-sm'>
-          {siteName}
-        </h1>
+        <div className='flex justify-center mb-8'>
+          <img
+            src='/logo.png'
+            alt='logo'
+            className='h-14 w-auto object-contain'
+          />
+        </div>
         <form onSubmit={handleSubmit} className='space-y-8'>
           {shouldAskUsername && (
             <div>
