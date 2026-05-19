@@ -1,0 +1,10 @@
+name = "cf100-cron-trigger"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+[triggers]
+crons = ["0 */2 * * *"]
+
+[vars]
+# 改成你的 Pages 实际域名
+CRON_TARGET_URL = "https://cf100-8ud.pages.dev/api/cron"

@@ -1,0 +1,13 @@
+name = "cf100-push"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 数据库绑定
+[[d1_databases]]
+binding = "DB"
+database_name = "cf100"
+database_id = "8211e540-91da-4f03-93d6-eb553604777f"
+
+# 注意：Cloudflare Pages 不支持 [triggers] 和 [vars]（运行时不生效）
+# 环境变量需要在 Cloudflare Dashboard → Pages → Settings → Environment variables 中设置
+# 定时任务通过独立的 cron-worker Worker 实现（见 cron-worker/ 目录）

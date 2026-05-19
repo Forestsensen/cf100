@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   try {
     console.log('Cron job triggered:', new Date().toISOString());
 
-    cronJob();
+    await cronJob();
 
     return NextResponse.json({
       success: true,

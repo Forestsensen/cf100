@@ -39,8 +39,21 @@ interface D1ExecResult {
 }
 
 // 获取全局 D1 数据库实例
-function getD1Database(): D1Database {
-  return (process.env as any).DB as D1Database;
+// Cloudflare Pages Edge Runtime 中，D1 绑定需要通过 getRequestContext().env 获取
+async function getD1Database(): Promise<D1Database> {
+  try {
+    const nextOnPages = await import('@cloudflare/next-on-pages');
+    const getRequestContext = (
+      nextOnPages as unknown as {
+        getRequestContext: () => { env: Record<string, unknown> };
+      }
+    ).getRequestContext;
+    const { env } = getRequestContext();
+    return env.DB as D1Database;
+  } catch {
+    // 回退：本地 wrangler dev 环境下 process.env 可能可用
+    return (process.env as any).DB as D1Database;
+  }
 }
 
 export class D1Storage implements IStorage {
@@ -48,7 +61,7 @@ export class D1Storage implements IStorage {
 
   private async getDatabase(): Promise<D1Database> {
     if (!this.db) {
-      this.db = getD1Database();
+      this.db = await getD1Database();
     }
     return this.db;
   }

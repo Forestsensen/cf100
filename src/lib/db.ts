@@ -4,15 +4,36 @@ import { AdminConfig } from './admin.types';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 
 // storage type: 'localstorage' | 'd1'，默认 'localstorage'
+// NEXT_PUBLIC_STORAGE_TYPE 在构建时内联（NEXT_PUBLIC_* 变量由 webpack 处理）
+// 如果构建时未设置，运行时会回退到检测 D1 绑定是否可用
 const STORAGE_TYPE =
-  (process.env.NEXT_PUBLIC_STORAGE_TYPE as
-    | 'localstorage'
-    | 'd1'
-    | undefined) || 'localstorage';
+  (process.env.NEXT_PUBLIC_STORAGE_TYPE as 'localstorage' | 'd1' | undefined) ||
+  'localstorage';
 
 // 创建存储实例
 async function createStorageAsync(): Promise<IStorage> {
-  switch (STORAGE_TYPE) {
+  // 优先使用构建时配置的 STORAGE_TYPE
+  // 如果未明确配置 d1，则运行时检测 D1 绑定是否可用（回退方案）
+  let effectiveType = STORAGE_TYPE;
+  if (effectiveType !== 'd1') {
+    try {
+      const nextOnPages = await import('@cloudflare/next-on-pages');
+      const getRequestContext = (
+        nextOnPages as unknown as {
+          getRequestContext: () => { env: Record<string, unknown> };
+        }
+      ).getRequestContext;
+      const { env } = getRequestContext();
+      if (env.DB) {
+        console.log('[db] 检测到 D1 绑定可用，自动切换到 d1 存储模式');
+        effectiveType = 'd1';
+      }
+    } catch {
+      // 非 CF Pages 环境，保持原 STORAGE_TYPE
+    }
+  }
+
+  switch (effectiveType) {
     case 'd1': {
       // @ts-expect-error d1 模块类型声明在 CF Pages 构建中可能不可用
       const { D1Storage } = await import('./d1.db');
@@ -79,14 +100,17 @@ export class DbManager {
     this.storage = storage;
     // 启动时自动触发数据迁移（异步，不阻塞构造）
     if (this.storage && typeof this.storage.migrateData === 'function') {
-      this.migrationPromise = this.storage.migrateData().then(async () => {
-        // 数据结构迁移完成后，执行密码哈希迁移
-        if (typeof this.storage!.migratePasswords === 'function') {
-          await this.storage!.migratePasswords();
-        }
-      }).catch((err) => {
-        console.error('数据迁移异常:', err);
-      });
+      this.migrationPromise = this.storage
+        .migrateData()
+        .then(async () => {
+          // 数据结构迁移完成后，执行密码哈希迁移
+          if (typeof this.storage!.migratePasswords === 'function') {
+            await this.storage!.migratePasswords();
+          }
+        })
+        .catch((err) => {
+          console.error('数据迁移异常:', err);
+        });
     }
   }
 
