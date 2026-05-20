@@ -5435,8 +5435,8 @@ function AdminPageClient() {
   );
 
   useEffect(() => {
-    // 首次加载时显示骨架
-    fetchConfig(true);
+    // 首次加载不显示骨架屏，直接渲染内容区域
+    fetchConfig(false);
   }, [fetchConfig]);
 
   // 切换标签展开状态
@@ -5491,11 +5491,6 @@ function AdminPageClient() {
     );
   }
 
-  if (error) {
-    // 错误已通过弹窗展示，此处直接返回空
-    return null;
-  }
-
   return (
     <PageLayout activePath='/admin'>
       <div className='px-2 sm:px-10 py-4 sm:py-8'>
@@ -5514,6 +5509,21 @@ function AdminPageClient() {
               </button>
             )}
           </div>
+
+          {/* 错误提示条 */}
+          {error && (
+            <div className='mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2'>
+              <AlertCircle size={18} className='text-red-500 flex-shrink-0' />
+              <span className='text-sm text-red-700 dark:text-red-300'>{error}</span>
+            </div>
+          )}
+
+          {/* 加载状态指示器（仅在后台刷新时显示小条） */}
+          {loading && (
+            <div className='mb-4 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden'>
+              <div className='h-full bg-blue-500 rounded-full animate-pulse w-1/3' />
+            </div>
+          )}
 
           {/* 配置文件标签 - 仅站长可见 */}
           {role === 'owner' && (

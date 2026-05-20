@@ -2,8 +2,6 @@
 
 'use client';
 
-import Artplayer from 'artplayer';
-import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -617,36 +615,6 @@ function PlayPageClient() {
     }
   };
 
-  class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
-    constructor(config: any) {
-      super(config);
-      const load = this.load.bind(this);
-      this.load = function (context: any, config: any, callbacks: any) {
-        // 拦截manifest和level请求
-        if (
-          (context as any).type === 'manifest' ||
-          (context as any).type === 'level'
-        ) {
-          const onSuccess = callbacks.onSuccess;
-          callbacks.onSuccess = function (
-            response: any,
-            stats: any,
-            context: any
-          ) {
-            // 如果是m3u8文件，处理内容以移除广告分段
-            if (response.data && typeof response.data === 'string') {
-              // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-              response.data = filterAdsFromM3U8(response.data);
-            }
-            return onSuccess(response, stats, context, null);
-          };
-        }
-        // 执行原始load方法
-        load(context, config, callbacks);
-      };
-    }
-  }
-
   // 当集数索引变化时自动更新视频地址
   useEffect(() => {
     updateVideoUrl(detail, currentEpisodeIndex);
@@ -1230,9 +1198,9 @@ function PlayPageClient() {
   };
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
     if (
-      !Artplayer ||
-      !Hls ||
       !videoUrl ||
       loading ||
       currentEpisodeIndex === null ||
@@ -1284,6 +1252,41 @@ function PlayPageClient() {
     }
 
     try {
+      // 动态导入 artplayer 和 hls.js（懒加载，减少首屏体积）
+      const [ArtplayerModule, HlsModule] = await Promise.all([
+        import('artplayer'),
+        import('hls.js'),
+      ]);
+      const Artplayer = ArtplayerModule.default;
+      const Hls = HlsModule.default;
+
+      // 广告过滤 HLS Loader（动态创建，依赖 Hls）
+      class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
+        constructor(config: any) {
+          super(config);
+          const load = this.load.bind(this);
+          this.load = function (context: any, config: any, callbacks: any) {
+            if (
+              (context as any).type === 'manifest' ||
+              (context as any).type === 'level'
+            ) {
+              const onSuccess = callbacks.onSuccess;
+              callbacks.onSuccess = function (
+                response: any,
+                stats: any,
+                context: any
+              ) {
+                if (response.data && typeof response.data === 'string') {
+                  response.data = filterAdsFromM3U8(response.data);
+                }
+                return onSuccess(response, stats, context, null);
+              };
+            }
+            load(context, config, callbacks);
+          };
+        }
+      }
+
       // 创建新的播放器实例
       Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
       Artplayer.USE_RAF = false;
@@ -1651,7 +1654,8 @@ function PlayPageClient() {
       console.error('创建播放器失败:', err);
       setError('播放器初始化失败');
     }
-  }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled]);
+    })();
+  }, [videoUrl, loading, blockAdEnabled]);
 
   // 当组件卸载时清理定时器、Wake Lock 和播放器资源
   useEffect(() => {
