@@ -7,6 +7,8 @@ import { getConfig, refineConfig, saveAndInvalidateConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { refreshLiveChannels } from '@/lib/live';
+import { SearchResult } from '@/lib/types';
+
 export const runtime = 'edge';
 
 // 诊断日志收集
@@ -19,11 +21,35 @@ function cronLog(msg: string) {
 }
 
 export async function GET(request: NextRequest) {
-  cronLogs.length = 0; // 清空日志
-  cronLog(`Cron job triggered: ${request.url}`);
+  cronLogs.length = 0;
+  const url = new URL(request.url);
+  const action = url.searchParams.get('action');
+  const targetUser = url.searchParams.get('user');
+
+  // ?action=users — 轻量查询，只返回用户列表（给 cron-worker 用）
+  if (action === 'users') {
+    try {
+      const users = await db.getAllUsers();
+      const ownerUsername = await getOwnerUsername();
+      if (ownerUsername && !users.includes(ownerUsername)) {
+        users.push(ownerUsername);
+      }
+      return NextResponse.json({ success: true, users });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  cronLog(`Cron job triggered: ${request.url}${targetUser ? ` (user=${targetUser})` : ''}`);
 
   try {
-    const result = await cronJobWithReport();
+    const result = await cronJobWithReport(targetUser || undefined);
 
     return NextResponse.json({
       success: true,
@@ -52,7 +78,26 @@ export async function GET(request: NextRequest) {
 // 保守设置为 40，留 10 次余量给配置刷新等其他操作
 const MAX_SUBREQUESTS = 40;
 
-async function cronJobWithReport() {
+// 并发限制工具（移植自 LunaTV）
+async function runWithConcurrency<T>(
+  tasks: (() => Promise<T>)[],
+  concurrency: number
+): Promise<T[]> {
+  const results: T[] = [];
+  let index = 0;
+  const worker = async () => {
+    while (index < tasks.length) {
+      const i = index++;
+      results[i] = await tasks[i]();
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker())
+  );
+  return results;
+}
+
+async function cronJobWithReport(targetUser?: string) {
   const report: Record<string, unknown> = {};
 
   // 1. 刷新配置
@@ -63,22 +108,62 @@ async function cronJobWithReport() {
   await refreshAllLiveChannels();
   report.liveDone = true;
 
-  // 3. 刷新播放记录/收藏（分批顺序处理，避免 subrequest 限制）
+  // 3. 刷新播放记录/收藏
+  // 函数级缓存：key 为 `${source}+${id}`，缓存 fetchVideoDetail 结果（移植自 LunaTV）
+  const detailCache = new Map<string, SearchResult | null>();
   let subrequestCount = 0;
+
+  // 获取详情（带缓存和错误处理，移植自 LunaTV）
+  const getDetail = async (
+    source: string,
+    id: string,
+    fallbackTitle: string
+  ): Promise<SearchResult | null> => {
+    const key = `${source}+${id}`;
+    if (detailCache.has(key)) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      return detailCache.get(key)!;
+    }
+    try {
+      subrequestCount++;
+      const detail = await fetchVideoDetail({
+        source,
+        id,
+        fallbackTitle: fallbackTitle.trim(),
+      });
+      detailCache.set(key, detail);
+      return detail;
+    } catch (err: any) {
+      cronLog(`获取详情失败 (${source}+${id}): ${err.message || err}`);
+      detailCache.set(key, null);
+      return null;
+    }
+  };
+
   let totalUpdated = 0;
   let totalSkipped = 0;
   let totalFailed = 0;
 
   try {
-    const users = await db.getAllUsers();
+    let users = await db.getAllUsers();
     const ownerUsername = await getOwnerUsername();
     if (ownerUsername && !users.includes(ownerUsername)) {
       users.push(ownerUsername);
     }
 
+    // 如果指定了用户，只处理该用户
+    if (targetUser) {
+      users = users.filter((u) => u === targetUser);
+      if (users.length === 0) {
+        cronLog(`指定用户 ${targetUser} 不存在`);
+        report.error = `User ${targetUser} not found`;
+        return report;
+      }
+    }
+
     cronLog(`找到 ${users.length} 个用户: ${users.join(', ') || '(无)'}`);
 
-    // 逐用户处理（不再并发用户）
+    // 逐用户处理
     for (const user of users) {
       if (subrequestCount >= MAX_SUBREQUESTS) {
         cronLog(`已达 subrequest 上限 (${subrequestCount})，跳过剩余用户`);
@@ -87,35 +172,24 @@ async function cronJobWithReport() {
 
       cronLog(`开始处理用户: ${user}`);
 
-      // 播放记录（顺序处理，不用并发）
+      // 播放记录
       try {
         const playRecords = await db.getAllPlayRecords(user);
         const entries = Object.entries(playRecords);
         cronLog(`用户 ${user} 有 ${entries.length} 条播放记录`);
 
-        for (const [key, record] of entries) {
-          if (subrequestCount >= MAX_SUBREQUESTS) {
-            cronLog(`已达 subrequest 上限，跳过剩余播放记录`);
-            break;
-          }
+        // 小批量并发（3个一组），在 subrequest 限制内适度并发
+        const tasks = entries.map(([key, record]) => async () => {
+          if (subrequestCount >= MAX_SUBREQUESTS) return;
 
           try {
             const [source, id] = key.split('+');
-            if (!source || !id) continue;
+            if (!source || !id) return;
 
-            subrequestCount++;
-            const detail = await fetchVideoDetail({
-              source,
-              id,
-              fallbackTitle: record.title.trim(),
-            }).catch((err) => {
-              cronLog(`获取详情失败 (${source}+${id}): ${err.message || err}`);
-              return null;
-            });
-
+            const detail = await getDetail(source, id, record.title);
             if (!detail) {
               totalFailed++;
-              continue;
+              return;
             }
 
             const episodeCount = detail.episodes?.length || 0;
@@ -139,16 +213,21 @@ async function cronJobWithReport() {
             } else {
               totalSkipped++;
             }
-          } catch (err) {
+          } catch (err: any) {
             cronLog(`处理播放记录失败 (${key}): ${err}`);
             totalFailed++;
           }
-        }
+        });
+
+        await runWithConcurrency(tasks, 3);
+        cronLog(
+          `用户 ${user} 播放记录处理完成 (subrequest: ${subrequestCount})`
+        );
       } catch (err) {
         cronLog(`获取用户 ${user} 播放记录失败: ${err}`);
       }
 
-      // 收藏（顺序处理）
+      // 收藏
       if (subrequestCount < MAX_SUBREQUESTS) {
         try {
           let favorites = await db.getAllFavorites(user);
@@ -160,31 +239,17 @@ async function cronJobWithReport() {
           const favEntries = Object.entries(favorites);
           cronLog(`用户 ${user} 有 ${favEntries.length} 条收藏`);
 
-          for (const [key, fav] of favEntries) {
-            if (subrequestCount >= MAX_SUBREQUESTS) {
-              cronLog(`已达 subrequest 上限，跳过剩余收藏`);
-              break;
-            }
+          const tasks = favEntries.map(([key, fav]) => async () => {
+            if (subrequestCount >= MAX_SUBREQUESTS) return;
 
             try {
               const [source, id] = key.split('+');
-              if (!source || !id) continue;
+              if (!source || !id) return;
 
-              subrequestCount++;
-              const favDetail = await fetchVideoDetail({
-                source,
-                id,
-                fallbackTitle: fav.title.trim(),
-              }).catch((err) => {
-                cronLog(
-                  `获取详情失败 (${source}+${id}): ${err.message || err}`
-                );
-                return null;
-              });
-
+              const favDetail = await getDetail(source, id, fav.title);
               if (!favDetail) {
                 totalFailed++;
-                continue;
+                return;
               }
 
               const favEpisodeCount = favDetail.episodes?.length || 0;
@@ -208,11 +273,16 @@ async function cronJobWithReport() {
               } else {
                 totalSkipped++;
               }
-            } catch (err) {
+            } catch (err: any) {
               cronLog(`处理收藏失败 (${key}): ${err}`);
               totalFailed++;
             }
-          }
+          });
+
+          await runWithConcurrency(tasks, 3);
+          cronLog(
+            `用户 ${user} 收藏处理完成 (subrequest: ${subrequestCount})`
+          );
         } catch (err) {
           cronLog(`获取用户 ${user} 收藏失败: ${err}`);
         }
@@ -221,11 +291,12 @@ async function cronJobWithReport() {
 
     report.users = users.length;
     report.subrequests = subrequestCount;
+    report.cacheHits = detailCache.size;
     report.updated = totalUpdated;
     report.skipped = totalSkipped;
     report.failed = totalFailed;
     cronLog(
-      `完成: subrequest ${subrequestCount}次, 更新 ${totalUpdated} 条, 跳过 ${totalSkipped} 条, 失败 ${totalFailed} 条`
+      `完成: subrequest ${subrequestCount}次, 缓存 ${detailCache.size} 条, 更新 ${totalUpdated} 条, 跳过 ${totalSkipped} 条, 失败 ${totalFailed} 条`
     );
   } catch (err) {
     cronLog(`刷新播放记录/收藏任务启动失败: ${err}`);
