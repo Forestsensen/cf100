@@ -1,7 +1,6 @@
 /* eslint-disable no-constant-condition */
 
 import { getConfig, saveAndInvalidateConfig } from "@/lib/config";
-import { db } from "@/lib/db";
 
 const defaultUA = 'AptvPlayer/1.4.10'
 

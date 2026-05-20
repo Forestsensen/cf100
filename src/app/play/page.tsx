@@ -1198,7 +1198,6 @@ function PlayPageClient() {
   };
 
   useEffect(() => {
-    let cancelled = false;
     (async () => {
     if (
       !videoUrl ||
