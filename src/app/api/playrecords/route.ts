@@ -25,10 +25,12 @@ export async function GET(request: NextRequest) {
         (u) => u.username === authInfo.username
       );
       if (!user) {
-        return NextResponse.json({ error: '用户不存在' }, { status: 401 });
+        // 用户在 cookie 中存在但配置中找不到（可能是配置缓存未更新）
+        // 返回空记录而非 401，避免客户端误判为未登录而跳转
+        return NextResponse.json({}, { status: 200 });
       }
       if (user.banned) {
-        return NextResponse.json({ error: '用户已被封禁' }, { status: 401 });
+        return NextResponse.json({ error: '用户已被封禁' }, { status: 403 });
       }
     }
 
@@ -36,10 +38,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(records, { status: 200 });
   } catch (err) {
     console.error('获取播放记录失败', err);
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    );
+    // D1 查询失败时返回空记录，避免客户端弹出错误并跳转登录
+    return NextResponse.json({}, { status: 200 });
   }
 }
 
