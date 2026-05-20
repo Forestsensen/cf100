@@ -224,13 +224,16 @@ const useAlertModal = () => {
     title: '',
   });
 
-  const showAlert = (config: Omit<typeof alertModal, 'isOpen'>) => {
-    setAlertModal({ ...config, isOpen: true });
-  };
+  const showAlert = useCallback(
+    (config: Omit<typeof alertModal, 'isOpen'>) => {
+      setAlertModal({ ...config, isOpen: true });
+    },
+    []
+  );
 
-  const hideAlert = () => {
+  const hideAlert = useCallback(() => {
     setAlertModal((prev) => ({ ...prev, isOpen: false }));
-  };
+  }, []);
 
   return { alertModal, showAlert, hideAlert };
 };
@@ -260,24 +263,27 @@ interface LoadingState {
 const useLoadingState = () => {
   const [loadingStates, setLoadingStates] = useState<LoadingState>({});
 
-  const setLoading = (key: string, loading: boolean) => {
+  const setLoading = useCallback((key: string, loading: boolean) => {
     setLoadingStates((prev) => ({ ...prev, [key]: loading }));
-  };
+  }, []);
 
-  const isLoading = (key: string) => loadingStates[key] || false;
+  const isLoading = useCallback(
+    (key: string) => loadingStates[key] || false,
+    [loadingStates]
+  );
 
-  const withLoading = async (
-    key: string,
-    operation: () => Promise<any>
-  ): Promise<any> => {
-    setLoading(key, true);
-    try {
-      const result = await operation();
-      return result;
-    } finally {
-      setLoading(key, false);
-    }
-  };
+  const withLoading = useCallback(
+    async (key: string, operation: () => Promise<any>): Promise<any> => {
+      setLoading(key, true);
+      try {
+        const result = await operation();
+        return result;
+      } finally {
+        setLoading(key, false);
+      }
+    },
+    [setLoading]
+  );
 
   return { loadingStates, setLoading, isLoading, withLoading };
 };
