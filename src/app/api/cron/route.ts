@@ -3,9 +3,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getOwnerUsername } from '@/lib/cf-env';
-import { getConfig, refineConfig, saveAndInvalidateConfig } from '@/lib/config';
+import {
+  ApiSite,
+  getAvailableApiSites,
+  getConfig,
+  refineConfig,
+  saveAndInvalidateConfig,
+} from '@/lib/config';
 import { db } from '@/lib/db';
-import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
+import { getDetailFromApi } from '@/lib/downstream';
 import { refreshLiveChannels } from '@/lib/live';
 import { SearchResult } from '@/lib/types';
 
@@ -46,7 +52,11 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  cronLog(`Cron job triggered: ${request.url}${targetUser ? ` (user=${targetUser})` : ''}`);
+  cronLog(
+    `Cron job triggered: ${request.url}${
+      targetUser ? ` (user=${targetUser})` : ''
+    }`
+  );
 
   try {
     const result = await cronJobWithReport(targetUser || undefined);
@@ -77,6 +87,12 @@ export async function GET(request: NextRequest) {
 // Cloudflare Free plan 每次请求最多 50 次 subrequest
 // 保守设置为 40，留 10 次余量给配置刷新等其他操作
 const MAX_SUBREQUESTS = 40;
+
+// 24 小时（毫秒），用于跳过近期已检查的记录
+const SKIP_WITHIN_24H = 24 * 60 * 60 * 1000;
+
+// 源站连续失败次数阈值，超过后跳过该源站剩余记录
+const SOURCE_FAIL_THRESHOLD = 3;
 
 // 并发限制工具（移植自 LunaTV）
 async function runWithConcurrency<T>(
@@ -109,32 +125,72 @@ async function cronJobWithReport(targetUser?: string) {
   report.liveDone = true;
 
   // 3. 刷新播放记录/收藏
-  // 函数级缓存：key 为 `${source}+${id}`，缓存 fetchVideoDetail 结果（移植自 LunaTV）
+  // 函数级缓存：key 为 `${source}+${id}`，缓存 getDetailFromApi 结果（移植自 LunaTV）
   const detailCache = new Map<string, SearchResult | null>();
   let subrequestCount = 0;
 
-  // 获取详情（带缓存和错误处理，移植自 LunaTV）
+  // 源站失败计数（优化 #2：连续失败 3 次后跳过该源站剩余记录）
+  const failedSources = new Map<string, number>();
+
+  // 获取可用源站列表
+  const apiSites = await getAvailableApiSites();
+  const apiSiteMap = new Map<string, ApiSite>();
+  for (const site of apiSites) {
+    apiSiteMap.set(site.key, site);
+  }
+
+  // 获取详情（优化 #1：直接调用 getDetailFromApi，跳过 search，subrequest 2→1）
+  // 优化 #2：源站连续失败自动跳过
+  // 带缓存和错误处理
   const getDetail = async (
     source: string,
-    id: string,
-    fallbackTitle: string
+    id: string
   ): Promise<SearchResult | null> => {
     const key = `${source}+${id}`;
+
+    // 命中缓存直接返回
     if (detailCache.has(key)) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       return detailCache.get(key)!;
     }
+
+    // 检查源站是否已被标记跳过
+    const failCount = failedSources.get(source) || 0;
+    if (failCount >= SOURCE_FAIL_THRESHOLD) {
+      return null;
+    }
+
+    // 查找源站配置
+    const apiSite = apiSiteMap.get(source);
+    if (!apiSite) {
+      cronLog(`源站 ${source} 配置不存在，跳过`);
+      detailCache.set(key, null);
+      return null;
+    }
+
     try {
       subrequestCount++;
-      const detail = await fetchVideoDetail({
-        source,
-        id,
-        fallbackTitle: fallbackTitle.trim(),
-      });
+      // 优化 #1：直接调用 getDetailFromApi（1 subrequest），不再走 fetchVideoDetail（2 subrequests）
+      const detail = await getDetailFromApi(apiSite, id);
       detailCache.set(key, detail);
+      // 成功则重置该源站失败计数
+      failedSources.delete(source);
       return detail;
     } catch (err: any) {
-      cronLog(`获取详情失败 (${source}+${id}): ${err.message || err}`);
+      // 优化 #2：记录源站失败次数
+      const newFailCount = (failedSources.get(source) || 0) + 1;
+      failedSources.set(source, newFailCount);
+      if (newFailCount >= SOURCE_FAIL_THRESHOLD) {
+        cronLog(
+          `⚠ 源站 ${source} 连续失败 ${newFailCount} 次，跳过该源站剩余记录`
+        );
+      } else {
+        cronLog(
+          `获取详情失败 (${source}+${id}): ${
+            err.message || err
+          } [失败 ${newFailCount}/${SOURCE_FAIL_THRESHOLD}]`
+        );
+      }
       detailCache.set(key, null);
       return null;
     }
@@ -142,6 +198,7 @@ async function cronJobWithReport(targetUser?: string) {
 
   let totalUpdated = 0;
   let totalSkipped = 0;
+  let totalSkippedRecent = 0; // 优化 #3：24h 内跳过的记录数
   let totalFailed = 0;
 
   try {
@@ -186,7 +243,14 @@ async function cronJobWithReport(targetUser?: string) {
             const [source, id] = key.split('+');
             if (!source || !id) return;
 
-            const detail = await getDetail(source, id, record.title);
+            // 优化 #3：跳过 24h 内已检查/更新的记录
+            const now = Date.now();
+            if (record.save_time && now - record.save_time < SKIP_WITHIN_24H) {
+              totalSkippedRecent++;
+              return;
+            }
+
+            const detail = await getDetail(source, id);
             if (!detail) {
               totalFailed++;
               return;
@@ -203,7 +267,7 @@ async function cronJobWithReport(targetUser?: string) {
                 play_time: record.play_time,
                 year: detail.year || record.year,
                 total_time: record.total_time,
-                save_time: record.save_time,
+                save_time: Date.now(), // 更新 save_time 为当前时间，标记为"已检查"
                 search_title: record.search_title,
               });
               cronLog(
@@ -211,6 +275,13 @@ async function cronJobWithReport(targetUser?: string) {
               );
               totalUpdated++;
             } else {
+              // 集数未变化，也更新 save_time 标记为"已检查"，避免下次重复请求
+              if (record.save_time !== now) {
+                await db.savePlayRecord(user, source, id, {
+                  ...record,
+                  save_time: now,
+                });
+              }
               totalSkipped++;
             }
           } catch (err: any) {
@@ -246,7 +317,14 @@ async function cronJobWithReport(targetUser?: string) {
               const [source, id] = key.split('+');
               if (!source || !id) return;
 
-              const favDetail = await getDetail(source, id, fav.title);
+              // 优化 #3：跳过 24h 内已检查/更新的收藏
+              const now = Date.now();
+              if (fav.save_time && now - fav.save_time < SKIP_WITHIN_24H) {
+                totalSkippedRecent++;
+                return;
+              }
+
+              const favDetail = await getDetail(source, id);
               if (!favDetail) {
                 totalFailed++;
                 return;
@@ -263,7 +341,7 @@ async function cronJobWithReport(targetUser?: string) {
                   cover: favDetail.poster || fav.cover,
                   year: favDetail.year || fav.year,
                   total_episodes: favEpisodeCount,
-                  save_time: fav.save_time,
+                  save_time: Date.now(), // 更新 save_time 标记为"已检查"
                   search_title: fav.search_title,
                 });
                 cronLog(
@@ -271,6 +349,13 @@ async function cronJobWithReport(targetUser?: string) {
                 );
                 totalUpdated++;
               } else {
+                // 集数未变化，也更新 save_time 标记为"已检查"
+                if (fav.save_time !== now) {
+                  await db.saveFavorite(user, source, id, {
+                    ...fav,
+                    save_time: now,
+                  });
+                }
                 totalSkipped++;
               }
             } catch (err: any) {
@@ -280,23 +365,35 @@ async function cronJobWithReport(targetUser?: string) {
           });
 
           await runWithConcurrency(tasks, 3);
-          cronLog(
-            `用户 ${user} 收藏处理完成 (subrequest: ${subrequestCount})`
-          );
+          cronLog(`用户 ${user} 收藏处理完成 (subrequest: ${subrequestCount})`);
         } catch (err) {
           cronLog(`获取用户 ${user} 收藏失败: ${err}`);
         }
       }
     }
 
+    // 源站失败统计
+    const skippedSources = Array.from(failedSources.entries())
+      .filter(([_, count]) => count >= SOURCE_FAIL_THRESHOLD)
+      .map(([source, count]) => `${source}(${count}次)`);
+
     report.users = users.length;
     report.subrequests = subrequestCount;
     report.cacheHits = detailCache.size;
     report.updated = totalUpdated;
     report.skipped = totalSkipped;
+    report.skippedRecent24h = totalSkippedRecent;
     report.failed = totalFailed;
+    if (skippedSources.length > 0) {
+      report.skippedSources = skippedSources;
+    }
     cronLog(
-      `完成: subrequest ${subrequestCount}次, 缓存 ${detailCache.size} 条, 更新 ${totalUpdated} 条, 跳过 ${totalSkipped} 条, 失败 ${totalFailed} 条`
+      `完成: subrequest ${subrequestCount}次, 缓存 ${detailCache.size} 条, ` +
+        `更新 ${totalUpdated} 条, 跳过(集数同) ${totalSkipped} 条, ` +
+        `跳过(24h内) ${totalSkippedRecent} 条, 失败 ${totalFailed} 条` +
+        (skippedSources.length > 0
+          ? `, 源站跳过: ${skippedSources.join(', ')}`
+          : '')
     );
   } catch (err) {
     cronLog(`刷新播放记录/收藏任务启动失败: ${err}`);
