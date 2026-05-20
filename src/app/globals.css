@@ -174,3 +174,40 @@ div[data-media-provider] video {
     display: none !important;
   }
 }
+
+/* 禁止文本选择 - 用于视频卡片等交互元素 */
+.select-none {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 禁用所有默认的长按和选择效果 - 用于视频卡片 */
+.touch-none {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* 单行文本溢出省略 */
+.truncate-1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 多行文本溢出省略 */
+.truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.truncate-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

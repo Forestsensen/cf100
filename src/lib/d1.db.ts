@@ -38,17 +38,23 @@ interface D1ExecResult {
   duration: number;
 }
 
+// 缓存 getRequestContext 函数，避免每次调用都 dynamic import
+let cachedGetRequestContext: (() => { env: Record<string, unknown> }) | null =
+  null;
+
 // 获取全局 D1 数据库实例
 // Cloudflare Pages Edge Runtime 中，D1 绑定需要通过 getRequestContext().env 获取
 async function getD1Database(): Promise<D1Database> {
   try {
-    const nextOnPages = await import('@cloudflare/next-on-pages');
-    const getRequestContext = (
-      nextOnPages as unknown as {
-        getRequestContext: () => { env: Record<string, unknown> };
-      }
-    ).getRequestContext;
-    const { env } = getRequestContext();
+    if (!cachedGetRequestContext) {
+      const nextOnPages = await import('@cloudflare/next-on-pages');
+      cachedGetRequestContext = (
+        nextOnPages as unknown as {
+          getRequestContext: () => { env: Record<string, unknown> };
+        }
+      ).getRequestContext;
+    }
+    const { env } = cachedGetRequestContext();
     return env.DB as D1Database;
   } catch {
     // 回退：本地 wrangler dev 环境下 process.env 可能可用
