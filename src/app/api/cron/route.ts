@@ -10,17 +10,28 @@ import { refreshLiveChannels } from '@/lib/live';
 import { SearchResult } from '@/lib/types';
 export const runtime = 'edge';
 
-export async function GET(request: NextRequest) {
-  console.log(request.url);
-  try {
-    console.log('Cron job triggered:', new Date().toISOString());
+// 诊断日志收集
+const cronLogs: string[] = [];
+function cronLog(msg: string) {
+  const ts = new Date().toISOString();
+  const line = `[${ts}] ${msg}`;
+  console.log(line);
+  cronLogs.push(line);
+}
 
-    await cronJob();
+export async function GET(request: NextRequest) {
+  cronLogs.length = 0; // 清空日志
+  cronLog(`Cron job triggered: ${request.url}`);
+
+  try {
+    const result = await cronJobWithReport();
 
     return NextResponse.json({
       success: true,
       message: 'Cron job executed successfully',
       timestamp: new Date().toISOString(),
+      ...result,
+      logs: cronLogs,
     });
   } catch (error) {
     console.error('Cron job failed:', error);
@@ -31,16 +42,205 @@ export async function GET(request: NextRequest) {
         message: 'Cron job failed',
         error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString(),
+        logs: cronLogs,
       },
       { status: 500 }
     );
   }
 }
 
-async function cronJob() {
+async function cronJobWithReport() {
+  const report: Record<string, unknown> = {};
+
+  // 1. 刷新配置
   await refreshConfig();
+  report.configDone = true;
+
+  // 2. 刷新直播源
   await refreshAllLiveChannels();
-  await refreshRecordAndFavorites();
+  report.liveDone = true;
+
+  // 3. 刷新播放记录/收藏（带诊断）
+  try {
+    const users = await db.getAllUsers();
+    const ownerUsername = await getOwnerUsername();
+    if (ownerUsername && !users.includes(ownerUsername)) {
+      users.push(ownerUsername);
+    }
+
+    cronLog(`找到 ${users.length} 个用户: ${users.join(', ') || '(无)'}`);
+
+    const detailCache = new Map<string, Promise<SearchResult | null>>();
+
+    const getDetail = async (
+      source: string,
+      id: string,
+      fallbackTitle: string
+    ): Promise<SearchResult | null> => {
+      const key = `${source}+${id}`;
+      let promise = detailCache.get(key);
+      if (!promise) {
+        promise = fetchVideoDetail({
+          source,
+          id,
+          fallbackTitle: fallbackTitle.trim(),
+        })
+          .then((detail) => {
+            const successPromise = Promise.resolve(detail);
+            detailCache.set(key, successPromise);
+            return detail;
+          })
+          .catch((err) => {
+            cronLog(`获取视频详情失败 (${source}+${id}): ${err}`);
+            return null;
+          });
+        detailCache.set(key, promise);
+      }
+      return promise;
+    };
+
+    const runWithConcurrency = async <T>(
+      tasks: (() => Promise<T>)[],
+      concurrency: number
+    ): Promise<T[]> => {
+      const results: T[] = [];
+      let index = 0;
+      const worker = async () => {
+        while (index < tasks.length) {
+          const i = index++;
+          results[i] = await tasks[i]();
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, tasks.length) }, () =>
+          worker()
+        )
+      );
+      return results;
+    };
+
+    let totalUpdated = 0;
+    let totalSkipped = 0;
+    let totalFailed = 0;
+
+    const processUser = async (user: string) => {
+      cronLog(`开始处理用户: ${user}`);
+
+      // 播放记录
+      try {
+        const playRecords = await db.getAllPlayRecords(user);
+        const entries = Object.entries(playRecords);
+        cronLog(`用户 ${user} 有 ${entries.length} 条播放记录`);
+
+        const tasks = entries.map(([key, record]) => async () => {
+          try {
+            const [source, id] = key.split('+');
+            if (!source || !id) return;
+
+            const detail = await getDetail(source, id, record.title);
+            if (!detail) {
+              totalFailed++;
+              return;
+            }
+
+            const episodeCount = detail.episodes?.length || 0;
+            if (episodeCount > 0 && episodeCount !== record.total_episodes) {
+              await db.savePlayRecord(user, source, id, {
+                title: detail.title || record.title,
+                source_name: record.source_name,
+                cover: detail.poster || record.cover,
+                index: record.index,
+                total_episodes: episodeCount,
+                play_time: record.play_time,
+                year: detail.year || record.year,
+                total_time: record.total_time,
+                save_time: record.save_time,
+                search_title: record.search_title,
+              });
+              cronLog(
+                `✓ 更新播放记录: ${record.title} (${record.total_episodes} -> ${episodeCount})`
+              );
+              totalUpdated++;
+            } else {
+              totalSkipped++;
+            }
+          } catch (err) {
+            cronLog(`处理播放记录失败 (${key}): ${err}`);
+            totalFailed++;
+          }
+        });
+
+        await runWithConcurrency(tasks, 5);
+      } catch (err) {
+        cronLog(`获取用户 ${user} 播放记录失败: ${err}`);
+      }
+
+      // 收藏
+      try {
+        let favorites = await db.getAllFavorites(user);
+        favorites = Object.fromEntries(
+          Object.entries(favorites).filter(([_, fav]) => fav.origin !== 'live')
+        );
+        const favEntries = Object.entries(favorites);
+        cronLog(`用户 ${user} 有 ${favEntries.length} 条收藏`);
+
+        const tasks = favEntries.map(([key, fav]) => async () => {
+          try {
+            const [source, id] = key.split('+');
+            if (!source || !id) return;
+
+            const favDetail = await getDetail(source, id, fav.title);
+            if (!favDetail) {
+              totalFailed++;
+              return;
+            }
+
+            const favEpisodeCount = favDetail.episodes?.length || 0;
+            if (favEpisodeCount > 0 && favEpisodeCount !== fav.total_episodes) {
+              await db.saveFavorite(user, source, id, {
+                title: favDetail.title || fav.title,
+                source_name: fav.source_name,
+                cover: favDetail.poster || fav.cover,
+                year: favDetail.year || fav.year,
+                total_episodes: favEpisodeCount,
+                save_time: fav.save_time,
+                search_title: fav.search_title,
+              });
+              cronLog(
+                `✓ 更新收藏: ${fav.title} (${fav.total_episodes} -> ${favEpisodeCount})`
+              );
+              totalUpdated++;
+            } else {
+              totalSkipped++;
+            }
+          } catch (err) {
+            cronLog(`处理收藏失败 (${key}): ${err}`);
+            totalFailed++;
+          }
+        });
+
+        await runWithConcurrency(tasks, 5);
+      } catch (err) {
+        cronLog(`获取用户 ${user} 收藏失败: ${err}`);
+      }
+    };
+
+    const userTasks = users.map((user) => () => processUser(user));
+    await runWithConcurrency(userTasks, 3);
+
+    report.users = users.length;
+    report.updated = totalUpdated;
+    report.skipped = totalSkipped;
+    report.failed = totalFailed;
+    cronLog(
+      `完成: 更新 ${totalUpdated} 条, 跳过 ${totalSkipped} 条, 失败 ${totalFailed} 条`
+    );
+  } catch (err) {
+    cronLog(`刷新播放记录/收藏任务启动失败: ${err}`);
+    report.error = String(err);
+  }
+
+  return report;
 }
 
 async function refreshAllLiveChannels() {
@@ -114,7 +314,7 @@ async function refreshConfig() {
   }
 }
 
-async function refreshRecordAndFavorites() {
+async function _refreshRecordAndFavorites() {
   try {
     const users = await db.getAllUsers();
     const ownerUsername = await getOwnerUsername();
