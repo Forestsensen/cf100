@@ -97,7 +97,11 @@ export async function POST(req: NextRequest) {
     const compressedData = await gzipAsync(jsonData);
 
     // 使用提供的密码加密压缩后的数据
-    const base64Compressed = btoa(String.fromCharCode(...compressedData));
+    let binary = '';
+    for (let i = 0; i < compressedData.length; i++) {
+      binary += String.fromCharCode(compressedData[i]);
+    }
+    const base64Compressed = btoa(binary);
     const encryptedData = SimpleCrypto.encrypt(base64Compressed, password);
 
     // 生成文件名
