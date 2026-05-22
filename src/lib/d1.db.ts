@@ -169,6 +169,19 @@ export class D1Storage implements IStorage {
     }
   }
 
+  async deleteAllPlayRecords(userName: string): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      await db
+        .prepare('DELETE FROM play_records WHERE username = ?')
+        .bind(userName)
+        .run();
+    } catch (err) {
+      console.error('Failed to delete all play records:', err);
+      throw err;
+    }
+  }
+
   // 收藏相关
   async getFavorite(userName: string, key: string): Promise<Favorite | null> {
     try {
@@ -267,6 +280,19 @@ export class D1Storage implements IStorage {
         .run();
     } catch (err) {
       console.error('Failed to delete favorite:', err);
+      throw err;
+    }
+  }
+
+  async deleteAllFavorites(userName: string): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      await db
+        .prepare('DELETE FROM favorites WHERE username = ?')
+        .bind(userName)
+        .run();
+    } catch (err) {
+      console.error('Failed to delete all favorites:', err);
       throw err;
     }
   }
@@ -581,6 +607,27 @@ export class D1Storage implements IStorage {
       return configs;
     } catch (err) {
       console.error('Failed to get all skip configs:', err);
+      throw err;
+    }
+  }
+
+  // 数据清理
+  async clearAllData(): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      const tables = [
+        'play_records',
+        'favorites',
+        'search_history',
+        'skip_configs',
+        'users',
+        'admin_config',
+      ];
+      for (const table of tables) {
+        await db.prepare(`DELETE FROM ${table}`).run();
+      }
+    } catch (err) {
+      console.error('Failed to clear all data:', err);
       throw err;
     }
   }
