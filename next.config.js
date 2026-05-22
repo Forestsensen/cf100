@@ -1,6 +1,5 @@
 /** @type {import('next').NextConfig} */
 /* eslint-disable @typescript-eslint/no-var-requires */
-
 const nextConfig = {
   output: 'standalone',
   eslint: {
@@ -8,11 +7,7 @@ const nextConfig = {
   },
 
   reactStrictMode: false,
-  swcMinify: false,
-
-  experimental: {
-    instrumentationHook: process.env.NODE_ENV === 'production',
-  },
+  swcMinify: true,
 
   // Uncoment to add domain whitelist
   images: {
