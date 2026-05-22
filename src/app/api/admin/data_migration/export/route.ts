@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { promisify } from 'util';
-import { gzip } from 'zlib';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { SimpleCrypto } from '@/lib/crypto';
@@ -11,7 +9,14 @@ import { CURRENT_VERSION } from '@/lib/version';
 
 export const runtime = 'edge';
 
-const gzipAsync = promisify(gzip);
+// Edge Runtime 兼容的 gzip 实现
+async function gzipAsync(data: string): Promise<Uint8Array> {
+  const encoder = new TextEncoder();
+  const stream = new Response(encoder.encode(data)).body!.pipeThrough(
+    new CompressionStream('gzip')
+  );
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -75,7 +80,7 @@ export async function POST(req: NextRequest) {
         searchHistory: await db.getSearchHistory(username),
         // 跳过片头片尾配置
         skipConfigs: await db.getAllSkipConfigs(username),
-        // 用户密码（通过验证空密码来检查用户是否存在，然后获取密码）
+        // 用户密码
         password: await getUserPassword(username)
       };
 
@@ -92,7 +97,8 @@ export async function POST(req: NextRequest) {
     const compressedData = await gzipAsync(jsonData);
 
     // 使用提供的密码加密压缩后的数据
-    const encryptedData = SimpleCrypto.encrypt(compressedData.toString('base64'), password);
+    const base64Compressed = btoa(String.fromCharCode(...compressedData));
+    const encryptedData = SimpleCrypto.encrypt(base64Compressed, password);
 
     // 生成文件名
     const now = new Date();
@@ -118,10 +124,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// 辅助函数：获取用户密码（通过数据库直接访问）
+// 辅助函数：获取用户密码
 async function getUserPassword(username: string): Promise<string | null> {
   try {
-    // 使用 Redis 存储的直接访问方法
     const storage = (db as any).storage;
     if (storage && typeof storage.client?.get === 'function') {
       const passwordKey = `u:${username}:pwd`;

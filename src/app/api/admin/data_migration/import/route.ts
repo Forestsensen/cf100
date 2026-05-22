@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { promisify } from 'util';
-import { gunzip } from 'zlib';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { configSelfCheck, setCachedConfig } from '@/lib/config';
@@ -11,7 +9,14 @@ import { db } from '@/lib/db';
 
 export const runtime = 'edge';
 
-const gunzipAsync = promisify(gunzip);
+// Edge Runtime 兼容的 gunzip 实现
+async function gunzipAsync(data: Uint8Array): Promise<string> {
+  const stream = new Response(data).body!.pipeThrough(
+    new DecompressionStream('gzip')
+  );
+  const buffer = await new Response(stream).arrayBuffer();
+  return new TextDecoder().decode(buffer);
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -60,9 +65,12 @@ export async function POST(req: NextRequest) {
     }
 
     // 解压缩数据
-    const compressedBuffer = Buffer.from(decryptedData, 'base64');
-    const decompressedBuffer = await gunzipAsync(compressedBuffer);
-    const decompressedData = decompressedBuffer.toString();
+    const binaryString = atob(decryptedData);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const decompressedData = await gunzipAsync(bytes);
 
     // 解析JSON数据
     let importData: any;
@@ -111,7 +119,7 @@ export async function POST(req: NextRequest) {
 
       // 导入搜索历史
       if (user.searchHistory && Array.isArray(user.searchHistory)) {
-        for (const keyword of user.searchHistory.reverse()) { // 反转以保持顺序
+        for (const keyword of user.searchHistory.reverse()) {
           await db.addSearchHistory(username, keyword);
         }
       }
