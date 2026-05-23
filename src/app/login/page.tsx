@@ -1,5 +1,4 @@
 
-export const runtime = 'edge';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 'use client';
