@@ -97,6 +97,48 @@ function PlayPageClient() {
     blockAdEnabledRef.current = blockAdEnabled;
   }, [blockAdEnabled]);
 
+  // Custom ad filter code state
+  const [customAdFilterCode, setCustomAdFilterCode] = useState<string>('');
+  const [customAdFilterVersion, setCustomAdFilterVersion] = useState<number>(0);
+  const customAdFilterCodeRef = useRef(customAdFilterCode);
+  useEffect(() => {
+    customAdFilterCodeRef.current = customAdFilterCode;
+  }, [customAdFilterCode]);
+
+  // Fetch custom ad filter code from API with version caching
+  useEffect(() => {
+    const fetchAdFilterCode = async () => {
+      try {
+        const cachedCode = localStorage.getItem('customAdFilterCode');
+        const cachedVersion = localStorage.getItem('customAdFilterVersion');
+        if (cachedCode && cachedVersion) {
+          setCustomAdFilterCode(cachedCode);
+          setCustomAdFilterVersion(parseInt(cachedVersion));
+        }
+        const version = (window as any).RUNTIME_CONFIG?.CUSTOM_AD_FILTER_VERSION || 0;
+        if (version === 0) {
+          localStorage.removeItem('customAdFilterCode');
+          localStorage.removeItem('customAdFilterVersion');
+          setCustomAdFilterCode('');
+          setCustomAdFilterVersion(0);
+          return;
+        }
+        if (!cachedVersion || parseInt(cachedVersion) !== version) {
+          const fullResponse = await fetch('/api/ad-filter?full=true');
+          if (!fullResponse.ok) return;
+          const { code, version: newVersion } = await fullResponse.json();
+          localStorage.setItem('customAdFilterCode', code || '');
+          localStorage.setItem('customAdFilterVersion', String(newVersion || 0));
+          setCustomAdFilterCode(code || '');
+          setCustomAdFilterVersion(newVersion || 0);
+        }
+      } catch (error) {
+        console.error('Failed to fetch ad filter code:', error);
+      }
+    };
+    fetchAdFilterCode();
+  }, []);
+
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
   const [videoYear, setVideoYear] = useState(searchParams.get('year') || '');
@@ -498,22 +540,58 @@ function PlayPageClient() {
   function filterAdsFromM3U8(m3u8Content: string): string {
     if (!m3u8Content) return '';
 
-    // 按行分割M3U8内容
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // 只过滤#EXT-X-DISCONTINUITY标识
-      if (!line.includes('#EXT-X-DISCONTINUITY')) {
-        filteredLines.push(line);
+    // If custom ad filter code exists, try it first
+    const customCode = customAdFilterCodeRef.current;
+    if (customCode && customCode.trim()) {
+      try {
+        // Remove TypeScript type annotations
+        const jsCode = customCode
+          .replace(/(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*([,)])/g, '$1$3')
+          .replace(/\)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*\{/g, ' ) {')
+          .replace(/(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*=/g, '$1 $2 =');
+        // eslint-disable-next-line no-new-func
+        const customFunction = new Function('type', 'm3u8Content',
+          jsCode + '
+return filterAdsFromM3U8(type, m3u8Content);'
+        );
+        const result = customFunction(currentSourceRef.current, m3u8Content);
+        console.log('Custom ad filter code applied');
+        return result;
+      } catch (err) {
+        console.error('Custom ad filter failed, using default:', err);
       }
     }
 
-    return filteredLines.join('\n');
-  }
+    // Default ad filtering rules
+    const adKeywords = [
+      'sponsor', '/ad/', '/ads/', 'advert', 'advertisement',
+      '/adjump', 'redtraffic'
+    ];
 
+    const lines = m3u8Content.split('
+');
+    const filteredLines = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (line.includes('#EXT-X-DISCONTINUITY')) {
+        i++; continue;
+      }
+      if (line.includes('#EXTINF:')) {
+        if (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          const containsAd = adKeywords.some(k =>
+            nextLine.toLowerCase().includes(k.toLowerCase())
+          );
+          if (containsAd) { i += 2; continue; }
+        }
+      }
+      filteredLines.push(line);
+      i++;
+    }
+    return filteredLines.join('
+');
+  }
   // 跳过片头片尾配置相关函数
   const handleSkipConfigChange = async (newConfig: {
     enable: boolean;
