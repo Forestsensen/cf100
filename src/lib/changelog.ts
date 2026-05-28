@@ -10,6 +10,17 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [
+    {
+      version: "100.1.3",
+      date: "2026-05-28",
+      added: [],
+      changed: [],
+      fixed: [
+        "修复首页热门电影、热门剧集、热门综艺在番剧接口失败时一并空白的问题",
+        "番剧日历改为通过服务端代理请求，规避 bgm.tv 的 CORS 限制"
+      ]
+    },
+
   {
     version: "100.1.2",
     date: "2026-03-15",
