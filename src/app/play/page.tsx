@@ -550,9 +550,8 @@ function PlayPageClient() {
           .replace(/\)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*\{/g, ' ) {')
           .replace(/(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*=/g, '$1 $2 =');
         // eslint-disable-next-line no-new-func
-        const customFunction = new Function('type', 'm3u8Content',
-          jsCode + '
-return filterAdsFromM3U8(type, m3u8Content);'
+                const customFunction = new Function('type', 'm3u8Content',
+          jsCode + '\n' + 'return filterAdsFromM3U8(type, m3u8Content);'
         );
         const result = customFunction(currentSourceRef.current, m3u8Content);
         console.log('Custom ad filter code applied');
