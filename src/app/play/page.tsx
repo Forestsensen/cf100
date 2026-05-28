@@ -540,138 +540,82 @@ function PlayPageClient() {
   function filterAdsFromM3U8(m3u8Content: string): string {
     if (!m3u8Content) return '';
 
-    // If custom ad filter code exists, try it first
+    // 如果有自定义去广告代码，优先使用
     const customCode = customAdFilterCodeRef.current;
     if (customCode && customCode.trim()) {
       try {
-        // Remove TypeScript type annotations
+        // 移除 TypeScript 类型注解,转换为纯 JavaScript
         const jsCode = customCode
           .replace(/(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*([,)])/g, '$1$3')
-          .replace(/\)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*\{/g, ' ) {')
+          .replace(/\)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*\{/g, ') {')
           .replace(/(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*=/g, '$1 $2 =');
+
+        // 创建并执行自定义函数
         // eslint-disable-next-line no-new-func
-                const customFunction = new Function('type', 'm3u8Content',
-          jsCode + '\n' + 'return filterAdsFromM3U8(type, m3u8Content);'
+        const customFunction = new Function('type', 'm3u8Content',
+          jsCode + '\nreturn filterAdsFromM3U8(type, m3u8Content);'
         );
         const result = customFunction(currentSourceRef.current, m3u8Content);
-        console.log('Custom ad filter code applied');
+        console.log('✅ 使用自定义去广告代码');
         return result;
       } catch (err) {
-        console.error('Custom ad filter failed, using default:', err);
+        console.error('执行自定义去广告代码失败,降级使用默认规则:', err);
+        // 继续使用默认规则
       }
     }
 
-    // Default ad filtering rules
+    // 默认去广告规则
+    if (!m3u8Content) return '';
+
+    // 广告关键字列表
     const adKeywords = [
-      'sponsor', '/ad/', '/ads/', 'advert', 'advertisement',
-      '/adjump', 'redtraffic'
+      'sponsor',
+      '/ad/',
+      '/ads/',
+      'advert',
+      'advertisement',
+      '/adjump',
+      'redtraffic'
     ];
 
-    const lines = m3u8Content.split('
-');
+    // 按行分割M3U8内容
+    const lines = m3u8Content.split('\n');
     const filteredLines = [];
+
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
+
+      // 跳过 #EXT-X-DISCONTINUITY 标识
       if (line.includes('#EXT-X-DISCONTINUITY')) {
-        i++; continue;
+        i++;
+        continue;
       }
+
+      // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
       if (line.includes('#EXTINF:')) {
+        // 检查下一行 URL 是否包含广告关键字
         if (i + 1 < lines.length) {
           const nextLine = lines[i + 1];
-          const containsAd = adKeywords.some(k =>
-            nextLine.toLowerCase().includes(k.toLowerCase())
+          const containsAdKeyword = adKeywords.some(keyword =>
+            nextLine.toLowerCase().includes(keyword.toLowerCase())
           );
-          if (containsAd) { i += 2; continue; }
+
+          if (containsAdKeyword) {
+            // 跳过 EXTINF 行和 URL 行
+            i += 2;
+            continue;
+          }
         }
       }
+
+      // 保留当前行
       filteredLines.push(line);
       i++;
     }
-    return filteredLines.join('
-');
-  }
-  // 跳过片头片尾配置相关函数
-  const handleSkipConfigChange = async (newConfig: {
-    enable: boolean;
-    intro_time: number;
-    outro_time: number;
-  }) => {
-    if (!currentSourceRef.current || !currentIdRef.current) return;
 
-    try {
-      setSkipConfig(newConfig);
-      if (!newConfig.enable && !newConfig.intro_time && !newConfig.outro_time) {
-        await deleteSkipConfig(currentSourceRef.current, currentIdRef.current);
-        artPlayerRef.current.setting.update({
-          name: '跳过片头片尾',
-          html: '跳过片头片尾',
-          switch: skipConfigRef.current.enable,
-          onSwitch: function (item: any) {
-            const newConfig = {
-              ...skipConfigRef.current,
-              enable: !item.switch,
-            };
-            handleSkipConfigChange(newConfig);
-            return !item.switch;
-          },
-        });
-        artPlayerRef.current.setting.update({
-          name: '设置片头',
-          html: '设置片头',
-          icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="12" r="2" fill="#ffffff"/><path d="M9 12L17 12" stroke="#ffffff" stroke-width="2"/><path d="M17 6L17 18" stroke="#ffffff" stroke-width="2"/></svg>',
-          tooltip:
-            skipConfigRef.current.intro_time === 0
-              ? '设置片头时间'
-              : `${formatTime(skipConfigRef.current.intro_time)}`,
-          onClick: function () {
-            const currentTime = artPlayerRef.current?.currentTime || 0;
-            if (currentTime > 0) {
-              const newConfig = {
-                ...skipConfigRef.current,
-                intro_time: currentTime,
-              };
-              handleSkipConfigChange(newConfig);
-              return `${formatTime(currentTime)}`;
-            }
-          },
-        });
-        artPlayerRef.current.setting.update({
-          name: '设置片尾',
-          html: '设置片尾',
-          icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 6L7 18" stroke="#ffffff" stroke-width="2"/><path d="M7 12L15 12" stroke="#ffffff" stroke-width="2"/><circle cx="19" cy="12" r="2" fill="#ffffff"/></svg>',
-          tooltip:
-            skipConfigRef.current.outro_time >= 0
-              ? '设置片尾时间'
-              : `-${formatTime(-skipConfigRef.current.outro_time)}`,
-          onClick: function () {
-            const outroTime =
-              -(
-                artPlayerRef.current?.duration -
-                artPlayerRef.current?.currentTime
-              ) || 0;
-            if (outroTime < 0) {
-              const newConfig = {
-                ...skipConfigRef.current,
-                outro_time: outroTime,
-              };
-              handleSkipConfigChange(newConfig);
-              return `-${formatTime(-outroTime)}`;
-            }
-          },
-        });
-      } else {
-        await saveSkipConfig(
-          currentSourceRef.current,
-          currentIdRef.current,
-          newConfig
-        );
-      }
-      console.log('跳过片头片尾配置已保存:', newConfig);
-    } catch (err) {
-      console.error('保存跳过片头片尾配置失败:', err);
-    }
-  };
+    return filteredLines.join('\n');
+  }
 
   const formatTime = (seconds: number): string => {
     if (seconds === 0) return '00:00';
