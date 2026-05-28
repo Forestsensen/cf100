@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     // 🔑 应用视频代理配置到单个源
     let targetSource = sourceFromConfig;
-    const proxyConfig = config.VideoProxyConfig;
+    const proxyConfig = (config as any).VideoProxyConfig;
 
     if (proxyConfig?.enabled && proxyConfig.proxyUrl) {
       const proxyBaseUrl = proxyConfig.proxyUrl.replace(/\/$/, '');
