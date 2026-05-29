@@ -538,6 +538,9 @@ function PlayPageClient() {
 
   // 去广告相关函数
   function filterAdsFromM3U8(m3u8Content: string): string {
+    // TEMP: disable ad filter to test playback
+    return m3u8Content;
+
     if (!m3u8Content) return '';
 
     // If custom ad filter code exists, try it first
