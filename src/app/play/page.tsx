@@ -1480,6 +1480,12 @@ function PlayPageClient() {
                 : Hls.DefaultConfig.loader,
             });
 
+            hls.loadSource(url);
+            hls.attachMedia(video);
+            video.hls = hls;
+
+            ensureVideoSource(video, url);
+
             hls.on(Hls.Events.ERROR, function (event: any, data: any) {
               console.error('HLS Error:', event, data);
               if (data.fatal) {
