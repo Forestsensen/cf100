@@ -1479,6 +1479,8 @@ function PlayPageClient() {
                 ? CustomHlsJsLoader
                 : Hls.DefaultConfig.loader,
             });
+
+            hls.on(Hls.Events.ERROR, function (event: any, data: any) {
               console.error('HLS Error:', event, data);
               if (data.fatal) {
                 switch (data.type) {
