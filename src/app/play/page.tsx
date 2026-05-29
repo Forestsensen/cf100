@@ -499,100 +499,20 @@ function PlayPageClient() {
   function filterAdsFromM3U8(m3u8Content: string): string {
     if (!m3u8Content) return '';
 
-    const NL = '\n';
-    const lines = m3u8Content.split(NL);
-    const filteredLines: string[] = [];
+    // 按行分割M3U8内容
+    const lines = m3u8Content.split('\n');
+    const filteredLines = [];
 
-    // ── 广告 URL 关键字（覆盖常见广告 CDN 域名/路径） ──
-    const adUrlKeywords = [
-      '/ad/', '/ads/', '/adv/', 'advert', 'advertisement',
-      '/adjump', 'redtraffic', 'sponsor',
-      'doubleclick', 'googlesyndication', 'adservice',
-      'adx', '/prebid/', 'prebid',
-      // 爱艺奇/爱奇艺 广告特征
-      't7.cupid.iqiyi.com', 'ad.m.iqiyi.com', 'afp.iqiyi.com',
-      'cupid.iqiyi.com', 'policy.video.iqiyi.com',
-      // 猫眼广告特征
-      'analytics.meituan', 'maoyan.*ad', 'stat.mafengwo',
-      // 通用广告检测
-      '/tj/', '/track/', '/analytics/', '/beacon/',
-      '.gif?',  // 广告像素追踪
-      'm3u8?token=',  // 某些源的广告 token
-    ];
-
-    // ── 广告段 URL 模式（整个 URL 匹配） ──
-    const adUrlPatterns = [
-      /\?.*type=(?:ad|pre|mid)/i,
-      /\?.*pos=(?:pre|mid|end)/i,
-      /\/pre_roll/i, /\/mid_roll/i, /\/post_roll/i,
-      /\/preroll/i, /\/midroll/i, /\/postroll/i,
-    ];
-
-    // ── DISCONTINUITY 累积跳过 ──
-    let discontinuityCount = 0;
-    let i = 0;
-    while (i < lines.length) {
+    for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      // 跳过 DISCONTINUITY（连续多个 = 广告段边界）
-      if (line.includes('#EXT-X-DISCONTINUITY')) {
-        discontinuityCount++;
-        i++;
-        continue;
+      // 只过滤#EXT-X-DISCONTINUITY标识
+      if (!line.includes('#EXT-X-DISCONTINUITY')) {
+        filteredLines.push(line);
       }
-
-      // 非 DISCONTINUITY 行重置计数
-      discontinuityCount = 0;
-
-      // 检查 EXTINF 行 → 下一行是 URL
-      if (line.includes('#EXTINF:')) {
-        if (i + 1 < lines.length) {
-          const url = lines[i + 1].trim();
-
-          // 1) URL 为空或不是 http 开头 → 跳过
-          if (!url || (!url.startsWith('http') && !url.startsWith('/'))) {
-            i += 2;
-            continue;
-          }
-
-          // 2) 广告关键字匹配
-          const urlLower = url.toLowerCase();
-          if (adUrlKeywords.some(k => urlLower.includes(k.toLowerCase()))) {
-            i += 2;
-            continue;
-          }
-
-          // 3) 广告 URL 正则匹配
-          if (adUrlPatterns.some(p => p.test(url))) {
-            i += 2;
-            continue;
-          }
-
-          // 4) EXTINF 时长异常短（<1s）+ 后面跟 DISCONTINUITY → 广告
-          const durMatch = line.match(/#EXTINF:([\d.]+)/);
-          if (durMatch && parseFloat(durMatch[1]) < 1.0) {
-            // 短片段检查是否紧接着 DISCONTINUITY（广告段特征）
-            let hasDiscontinuityAfter = false;
-            for (let j = i + 2; j < Math.min(i + 6, lines.length); j++) {
-              if (lines[j].includes('#EXT-X-DISCONTINUITY')) {
-                hasDiscontinuityAfter = true;
-                break;
-              }
-              if (lines[j].includes('#EXTINF:')) break; // 到下一个节目了
-            }
-            if (hasDiscontinuityAfter) {
-              i += 2;
-              continue;
-            }
-          }
-        }
-      }
-
-      filteredLines.push(line);
-      i++;
     }
 
-    return filteredLines.join(NL);
+    return filteredLines.join('\n');
   }
   // 跳过片头片尾配置相关函数
   const handleSkipConfigChange = async (newConfig: {
