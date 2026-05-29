@@ -1423,58 +1423,26 @@ function PlayPageClient() {
               };
             };
 
-            const connection = (navigator as any).connection;
-            const effectiveType = connection?.effectiveType || '4g';
-            const isSlowNetwork = effectiveType === '2g' || effectiveType === 'slow-2g';
-            const isMediumNetwork = effectiveType === '3g';
+            // Mobile device detection for buffer tuning
             const bufferConfig = getHlsBufferConfig();
 
             const hls = new Hls({
               debug: false,
               enableWorker: true,
-              lowLatencyMode: !isMobile,
+              lowLatencyMode: true,
 
+              /* Buffer settings - use user-selected mode */
               maxBufferLength: isMobile
                 ? (isIOS13 ? 8 : isIOS ? 10 : 15)
-                : (isSlowNetwork ? 60 : isMediumNetwork ? 90 : bufferConfig.maxBufferLength),
+                : bufferConfig.maxBufferLength,
               backBufferLength: isMobile
                 ? (isIOS13 ? 5 : isIOS ? 8 : 10)
                 : bufferConfig.backBufferLength,
               maxBufferSize: isMobile
                 ? (isIOS13 ? 20 * 1000 * 1000 : isIOS ? 30 * 1000 * 1000 : 40 * 1000 * 1000)
-                : (isSlowNetwork ? 30 * 1000 * 1000 : bufferConfig.maxBufferSize),
+                : bufferConfig.maxBufferSize,
 
-              maxLoadingDelay: isMobile ? (isIOS13 ? 2 : 3) : 4,
-              maxBufferHole: isMobile ? (isIOS13 ? 0.05 : 0.1) : 0.1,
-              liveDurationInfinity: false,
-              maxMaxBufferLength: isMobile ? (isIOS13 ? 60 : 120) : 600,
-              maxFragLookUpTolerance: isMobile ? 0.1 : 0.25,
-
-              startFragPrefetch: !isMobile,
-              testBandwidth: !isIOS13,
-
-              abrEwmaFastLive: isMobile ? 2 : 3,
-              abrEwmaSlowLive: isMobile ? 6 : 9,
-              abrBandWidthFactor: isMobile ? 0.8 : 0.95,
-              abrBandWidthUpFactor: 0.7,
-
-              fragLoadPolicy: {
-                default: {
-                  maxTimeToFirstByteMs: isMobile ? 6000 : 10000,
-                  maxLoadTimeMs: isMobile ? 60000 : 120000,
-                  timeoutRetry: {
-                    maxNumRetry: isMobile ? 2 : 4,
-                    retryDelayMs: 0,
-                    maxRetryDelayMs: 0,
-                  },
-                  errorRetry: {
-                    maxNumRetry: isMobile ? 3 : 6,
-                    retryDelayMs: 1000,
-                    maxRetryDelayMs: isMobile ? 4000 : 8000,
-                  },
-                },
-              },
-
+              /* Custom loader */
               loader: blockAdEnabledRef.current
                 ? CustomHlsJsLoader
                 : Hls.DefaultConfig.loader,
