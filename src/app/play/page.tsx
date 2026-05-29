@@ -567,8 +567,7 @@ function PlayPageClient() {
       '/adjump', 'redtraffic'
     ];
 
-    const lines = m3u8Content.split('
-');
+    const lines = m3u8Content.split(String.fromCharCode(92,110));
     const filteredLines = [];
     let i = 0;
     while (i < lines.length) {
@@ -588,8 +587,7 @@ function PlayPageClient() {
       filteredLines.push(line);
       i++;
     }
-    return filteredLines.join('
-');
+    return filteredLines.join(String.fromCharCode(92,110));
   }
   // 跳过片头片尾配置相关函数
   const handleSkipConfigChange = async (newConfig: {
