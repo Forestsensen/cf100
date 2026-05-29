@@ -56,6 +56,10 @@ export const API_CONFIG = {
 // 在模块加载时根据环境决定配置来源
 let cachedConfig: AdminConfig;
 
+// Clear the in-memory config cache so next getConfig() reads fresh from D1
+export function clearConfigCache() {
+  cachedConfig = undefined as any;
+}
 
 // 从配置文件补充管理员配置
 export function refineConfig(adminConfig: AdminConfig): AdminConfig {

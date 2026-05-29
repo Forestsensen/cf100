@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { getConfig } from '@/lib/config';
+import { clearConfigCache, getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 
 export const runtime = 'edge';
@@ -295,6 +295,10 @@ export async function POST(request: NextRequest) {
         if (userIndex > -1) {
           adminConfig.UserConfig.Users.splice(userIndex, 1);
         }
+
+        // Persist to D1 and clear cache so deleted user disappears
+        await db.saveAdminConfig(adminConfig);
+        clearConfigCache();
 
         break;
       }
