@@ -499,15 +499,24 @@ function PlayPageClient() {
   function filterAdsFromM3U8(m3u8Content: string): string {
     if (!m3u8Content) return '';
 
-    // 广告关键字列表
+    // 广告关键字列表（覆盖爱艺奇、优质资源、电影天堂、艾旦影视、猫眼等源）
     const adKeywords = [
-      'sponsor',
-      '/ad/',
-      '/ads/',
-      'advert',
-      'advertisement',
-      '/adjump',
-      'redtraffic'
+      // 通用广告关键字
+      'sponsor', '/ad/', '/ads/', 'advert', 'advertisement',
+      '/adjump', 'redtraffic',
+      // 爱艺奇/爱奇艺 广告特征
+      'cupid.iqiyi.com', 'afp.iqiyi.com', 'ad.m.iqiyi.com',
+      'policy.video.iqiyi.com', 't7.cupid.iqiyi.com',
+      // 猫眼广告特征
+      'maoyan.*ad', 'analytics.meituan', 'stat.mafengwo',
+      // 电影天堂/艾旦影视/优质资源 通用广告特征
+      'pre_roll', 'mid_roll', 'post_roll',
+      'preroll', 'midroll', 'postroll',
+      '/adjump', 'redtraffic',
+      // 广告追踪像素
+      '.gif?', '.png?ad',
+      // 广告 CDN 域名
+      'doubleclick', 'googlesyndication', 'adservice',
     ];
 
     // 按行分割M3U8内容
