@@ -2,6 +2,36 @@
 import he from 'he';
 import Hls from 'hls.js';
 
+// ============ 设备检测工具函数 ============
+const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+
+export const isIOS = typeof window !== 'undefined' && /iPad|iPhone|iPod/i.test(userAgent) && !(window as any).MSStream;
+export const isIOS13Plus = isIOS || (
+  typeof window !== 'undefined' &&
+  userAgent.includes('Macintosh') &&
+  typeof navigator !== 'undefined' &&
+  navigator.maxTouchPoints >= 1
+);
+export const isIPad = typeof window !== 'undefined' && (/iPad/i.test(userAgent) || (
+  userAgent.includes('Macintosh') &&
+  typeof navigator !== 'undefined' &&
+  navigator.maxTouchPoints > 2
+));
+export const isAndroid = /Android/i.test(userAgent);
+export const isMobile = isIOS13Plus || isAndroid || /webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+export const isTablet = isIPad || (isAndroid && !/Mobile/i.test(userAgent)) ||
+  (typeof window !== 'undefined' && typeof screen !== 'undefined' && screen.width >= 768);
+export const isSafari = /^(?:(?!chrome|android).)*safari/i.test(userAgent) && !isAndroid;
+
+export type DevicePerformance = 'low' | 'medium' | 'high';
+export function getDevicePerformanceLevel(): DevicePerformance {
+  if (typeof navigator === 'undefined') return 'medium';
+  const cores = navigator.hardwareConcurrency || 4;
+  if (isMobile) return cores >= 6 ? 'medium' : 'low';
+  return cores >= 8 ? 'high' : cores >= 4 ? 'medium' : 'low';
+}
+export const devicePerformance: DevicePerformance = typeof window !== 'undefined' ? getDevicePerformanceLevel() : 'medium';
+
 function getDoubanImageProxyConfig(): {
   proxyType:
   | 'server'
