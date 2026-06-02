@@ -17,6 +17,7 @@ interface VideoInfo {
   quality: string;
   loadSpeed: string;
   pingTime: number;
+  score?: number; // 综合评分（0-100）
   hasError?: boolean; // 添加错误状态标识
 }
 
@@ -520,6 +521,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
               <div className='flex-1 overflow-y-auto space-y-2 pb-20'>
                 {availableSources
                   .sort((a, b) => {
+                    // 当前源始终置顶
                     const aIsCurrent =
                       a.source?.toString() === currentSource?.toString() &&
                       a.id?.toString() === currentId?.toString();
@@ -528,6 +530,16 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       b.id?.toString() === currentId?.toString();
                     if (aIsCurrent && !bIsCurrent) return -1;
                     if (!aIsCurrent && bIsCurrent) return 1;
+
+                    // 非当前源按评分降序排列
+                    const aKey = `${a.source}-${a.id}`;
+                    const bKey = `${b.source}-${b.id}`;
+                    const aInfo = videoInfoMap.get(aKey);
+                    const bInfo = videoInfoMap.get(bKey);
+                    const aScore = aInfo?.score ?? -1;
+                    const bScore = bInfo?.score ?? -1;
+                    if (aScore !== bScore) return bScore - aScore;
+
                     return 0;
                   })
                   .map((source, index) => {
@@ -618,9 +630,16 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
                           {/* 源名称和集数信息 - 垂直居中 */}
                           <div className='flex items-center justify-between'>
-                            <span className='text-xs px-2 py-1 border border-gray-500/60 rounded text-gray-700 dark:text-gray-300'>
-                              {source.source_name}
-                            </span>
+                            <div className='flex items-center gap-1.5'>
+                              <span className='text-xs px-2 py-1 border border-gray-500/60 rounded text-gray-700 dark:text-gray-300'>
+                                {source.source_name}
+                              </span>
+                              {isCurrentSource && (
+                                <span className='text-[10px] px-1.5 py-0 rounded-full bg-green-500/20 text-green-600 dark:text-green-400 font-medium'>
+                                  当前
+                                </span>
+                              )}
+                            </div>
                             {source.episodes.length > 1 && (
                               <span className='text-xs text-gray-500 dark:text-gray-400 font-medium'>
                                 {source.episodes.length} 集
@@ -628,31 +647,52 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                             )}
                           </div>
 
-                          {/* 网络信息 - 底部 */}
-                          <div className='flex items-end h-6'>
+                          {/* 网络信息 + 评分 - 底部 */}
+                          <div className='flex items-end justify-between h-6'>
+                            <div className='flex items-end gap-3 text-xs'>
+                              {(() => {
+                                const sourceKey = `${source.source}-${source.id}`;
+                                const videoInfo = videoInfoMap.get(sourceKey);
+                                if (videoInfo) {
+                                  if (!videoInfo.hasError) {
+                                    return (
+                                      <>
+                                        <div className='text-green-600 dark:text-green-400 font-medium text-xs'>
+                                          {videoInfo.loadSpeed}
+                                        </div>
+                                        <div className='text-orange-600 dark:text-orange-400 font-medium text-xs'>
+                                          {videoInfo.pingTime}ms
+                                        </div>
+                                      </>
+                                    );
+                                  } else {
+                                    return (
+                                      <div className='text-red-500/90 dark:text-red-400 font-medium text-xs'>
+                                        无测速数据
+                                      </div>
+                                    );
+                                  }
+                                }
+                                return null;
+                              })()}
+                            </div>
                             {(() => {
                               const sourceKey = `${source.source}-${source.id}`;
                               const videoInfo = videoInfoMap.get(sourceKey);
-                              if (videoInfo) {
-                                if (!videoInfo.hasError) {
-                                  return (
-                                    <div className='flex items-end gap-3 text-xs'>
-                                      <div className='text-green-600 dark:text-green-400 font-medium text-xs'>
-                                        {videoInfo.loadSpeed}
-                                      </div>
-                                      <div className='text-orange-600 dark:text-orange-400 font-medium text-xs'>
-                                        {videoInfo.pingTime}ms
-                                      </div>
-                                    </div>
-                                  );
-                                } else {
-                                  return (
-                                    <div className='text-red-500/90 dark:text-red-400 font-medium text-xs'>
-                                      无测速数据
-                                    </div>
-                                  ); // 占位div
-                                }
+                              if (videoInfo && videoInfo.score !== undefined && videoInfo.score > 0) {
+                                const score = videoInfo.score;
+                                const scoreColor = score >= 80
+                                  ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950'
+                                  : score >= 50
+                                    ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white'
+                                    : 'bg-gradient-to-r from-gray-400 to-gray-500 text-white';
+                                return (
+                                  <div className={`${scoreColor} px-1.5 py-0 rounded text-xs font-bold flex-shrink-0 min-w-[32px] text-center shadow-sm`}>
+                                    {score.toFixed(0)}
+                                  </div>
+                                );
                               }
+                              return null;
                             })()}
                           </div>
                         </div>

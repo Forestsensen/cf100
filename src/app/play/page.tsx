@@ -185,8 +185,13 @@ function PlayPageClient() {
 
   // 保存优选时的测速结果，避免EpisodeSelector重复测速
   const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
-    Map<string, { quality: string; loadSpeed: string; pingTime: number }>
+    Map<string, { quality: string; loadSpeed: string; pingTime: number; score?: number }>
   >(new Map());
+
+  // 优选阶段的实时测速进度（用于UI展示）
+  const [preferringResults, setPreferringResults] = useState<
+    Array<{ sourceName: string; quality: string; loadSpeed: string; pingTime: number; score: number; done: boolean }>
+  >([]);
 
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
@@ -252,6 +257,41 @@ function PlayPageClient() {
         })
       );
       allResults.push(...batchResults);
+
+      // 实时更新优选进度UI：计算已完成批次的临时评分
+      const completedSoFar = allResults.map((result, index) => {
+        const src = sources[index];
+        if (!result) return null;
+        const speedsSoFar = allResults
+          .filter(Boolean)
+          .map((r) => {
+            const m = r!.testResult.loadSpeed.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
+            if (!m) return 0;
+            return m[2] === 'MB/s' ? parseFloat(m[1]) * 1024 : parseFloat(m[1]);
+          })
+          .filter((s) => s > 0);
+        const pingsSoFar = allResults
+          .filter(Boolean)
+          .map((r) => r!.testResult.pingTime)
+          .filter((p) => p > 0);
+        const tempMaxSpeed = speedsSoFar.length > 0 ? Math.max(...speedsSoFar) : 1024;
+        const tempMinPing = pingsSoFar.length > 0 ? Math.min(...pingsSoFar) : 50;
+        const tempMaxPing = pingsSoFar.length > 0 ? Math.max(...pingsSoFar) : 1000;
+        return {
+          sourceName: src.source_name,
+          quality: result.testResult.quality,
+          loadSpeed: result.testResult.loadSpeed,
+          pingTime: result.testResult.pingTime,
+          score: calculateSourceScore(result.testResult, tempMaxSpeed, tempMinPing, tempMaxPing),
+          done: true,
+        };
+      });
+      // 填充未完成的源
+      const progressList = sources.map((src, idx) => {
+        if (completedSoFar[idx]) return completedSoFar[idx];
+        return { sourceName: src.source_name, quality: '', loadSpeed: '', pingTime: 0, score: 0, done: false };
+      });
+      setPreferringResults([...progressList]);
     }
 
     // 等待所有测速完成，包含成功和失败的结果
@@ -262,6 +302,7 @@ function PlayPageClient() {
         quality: string;
         loadSpeed: string;
         pingTime: number;
+        score?: number;
         hasError?: boolean;
       }
     >();
@@ -270,7 +311,7 @@ function PlayPageClient() {
       const sourceKey = `${source.source}-${source.id}`;
 
       if (result) {
-        // 成功的结果
+        // 成功的结果 - 评分在下方统一计算后回填
         newVideoInfoMap.set(sourceKey, result.testResult);
       }
     });
@@ -326,6 +367,39 @@ function PlayPageClient() {
 
     // 按综合评分排序，选择最佳播放源
     resultsWithScore.sort((a, b) => b.score - a.score);
+
+    // 将最终评分回填到 precomputedVideoInfo
+    resultsWithScore.forEach((result) => {
+      const sourceKey = `${result.source.source}-${result.source.id}`;
+      const existing = newVideoInfoMap.get(sourceKey);
+      if (existing) {
+        newVideoInfoMap.set(sourceKey, { ...existing, score: result.score });
+      }
+    });
+
+    // 更新最终优选进度UI
+    setPreferringResults(
+      sources.map((src, idx) => {
+        const scored = resultsWithScore.find(
+          (r) => `${r.source.source}-${r.source.id}` === `${src.source}-${src.id}`
+        );
+        if (scored) {
+          return {
+            sourceName: src.source_name,
+            quality: scored.testResult.quality,
+            loadSpeed: scored.testResult.loadSpeed,
+            pingTime: scored.testResult.pingTime,
+            score: scored.score,
+            done: true,
+          };
+        }
+        const allResult = allResults[idx];
+        if (!allResult) {
+          return { sourceName: src.source_name, quality: '', loadSpeed: '', pingTime: 0, score: 0, done: true, error: true };
+        }
+        return { sourceName: src.source_name, quality: '', loadSpeed: '', pingTime: 0, score: 0, done: true, error: true };
+      })
+    );
 
     console.log('播放源评分排序结果:');
     resultsWithScore.forEach((result, index) => {
@@ -1820,6 +1894,49 @@ function PlayPageClient() {
               <p className='text-xl font-semibold text-gray-800 dark:text-gray-200 animate-pulse'>
                 {loadingMessage}
               </p>
+
+              {/* 优选阶段实时测速进度 */}
+              {loadingStage === 'preferring' && preferringResults.length > 0 && (
+                <div className='mt-4 w-80 mx-auto'>
+                  <div className='text-xs text-gray-500 dark:text-gray-400 mb-2 text-left'>
+                    测速进度 ({preferringResults.filter(r => r.done).length}/{preferringResults.length})
+                  </div>
+                  <div className='space-y-1.5 max-h-48 overflow-y-auto'>
+                    {preferringResults.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs transition-all duration-300 ${
+                          item.done
+                            ? item.error
+                              ? 'bg-gray-100 dark:bg-gray-800/50 opacity-50'
+                              : 'bg-white dark:bg-gray-800 shadow-sm'
+                            : 'bg-gray-50 dark:bg-gray-800/30 animate-pulse'
+                        }`}
+                      >
+                        <div className='flex items-center gap-2 min-w-0 flex-1'>
+                          {!item.done ? (
+                            <div className='w-3 h-3 border-2 border-green-500 border-t-transparent rounded-full animate-spin flex-shrink-0' />
+                          ) : item.error ? (
+                            <span className='text-gray-400 flex-shrink-0'>-</span>
+                          ) : (
+                            <span className={`flex-shrink-0 font-bold ${item.score >= 80 ? 'text-amber-500' : item.score >= 50 ? 'text-green-500' : 'text-gray-400'}`}>
+                              {item.score.toFixed(0)}
+                            </span>
+                          )}
+                          <span className='truncate text-gray-700 dark:text-gray-300'>{item.sourceName}</span>
+                        </div>
+                        {item.done && !item.error && (
+                          <div className='flex items-center gap-2 flex-shrink-0 text-[11px] text-gray-500 dark:text-gray-400'>
+                            <span className={item.quality === '4K' || item.quality === '2K' ? 'text-purple-500' : item.quality === '1080p' || item.quality === '720p' ? 'text-green-500' : ''}>{item.quality}</span>
+                            <span>{item.loadSpeed}</span>
+                            <span>{item.pingTime}ms</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
