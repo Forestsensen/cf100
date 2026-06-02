@@ -268,9 +268,16 @@ export async function testSingleSource(
 
   try {
     // 1. 搜索获取视频列表
+    // 处理代理 URL：如果源 API 包含 ?url=，提取实际 API 地址
+    let actualApi = sourceApi;
+    const proxyMatch = sourceApi.match(/[?&]url=([^&]+)/);
+    if (proxyMatch) {
+      actualApi = decodeURIComponent(proxyMatch[1]);
+    }
+    
     // 源 API URL 已经包含完整路径，直接加查询参数
-    const separator = sourceApi.includes('?') ? '&' : '?';
-    const searchUrl = `${sourceApi}${separator}ac=videolist&wd=${encodeURIComponent(searchKeyword)}`;
+    const separator = actualApi.includes('?') ? '&' : '?';
+    const searchUrl = `${actualApi}${separator}ac=videolist&wd=${encodeURIComponent(searchKeyword)}`;
     const searchRes = await proxyFetch(searchUrl);
     if (!searchRes.ok) {
       return { ...emptyResult, error: `搜索失败: ${searchRes.status}` };
