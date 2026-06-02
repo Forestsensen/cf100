@@ -149,7 +149,7 @@ async function getUserPassword(username: string): Promise<string | null> {
       const result = await d1
         .prepare('SELECT password FROM users WHERE username = ?')
         .bind(username)
-        .first<{ password: string }>();
+        .first();
       return result?.password || null;
     }
 
