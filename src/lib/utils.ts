@@ -108,6 +108,14 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
 
   // 解析 m3u8 URL 的基础路径（用于拼接相对路径分片）
   const m3u8Base = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1);
+  const m3u8Origin = m3u8Url.match(/^https?:\/\/[^/]+/)?.[0] || '';
+
+  // 路径拼接：支持绝对路径(/开头)、相对路径、完整URL
+  const resolveUrl = (path: string) => {
+    if (path.startsWith('http')) return path;
+    if (path.startsWith('/')) return m3u8Origin + path;
+    return m3u8Base + path;
+  };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -139,8 +147,7 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) continue;
       if (trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?')) continue;
-      const fullUrl = trimmed.startsWith('http') ? trimmed : m3u8Base + trimmed;
-      segmentUrls.push(fullUrl);
+      segmentUrls.push(resolveUrl(trimmed));
     }
 
     // 如果没有分片 → master playlist → 进入子m3u8
@@ -182,7 +189,7 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
       }
 
       if (bestSubUrl) {
-        const subUrl = bestSubUrl.startsWith('http') ? bestSubUrl : m3u8Base + bestSubUrl;
+        const subUrl = resolveUrl(bestSubUrl);
         console.log('[测速] 进入子m3u8:', subUrl);
         try {
           const subResp = await fetch(proxy(subUrl), { signal: controller.signal });
@@ -197,11 +204,14 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
               }
             }
             const subBase = subUrl.substring(0, subUrl.lastIndexOf('/') + 1);
+            const subOrigin = subUrl.match(/^https?:\/\/[^/]+/)?.[0] || '';
             for (const line of subText.split('\n')) {
               const trimmed = line.trim();
               if (!trimmed || trimmed.startsWith('#')) continue;
               if (trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?')) continue;
-              const fullUrl = trimmed.startsWith('http') ? trimmed : subBase + trimmed;
+              const fullUrl = trimmed.startsWith('http') ? trimmed
+                : trimmed.startsWith('/') ? subOrigin + trimmed
+                : subBase + trimmed;
               segmentUrls.push(fullUrl);
             }
           }
