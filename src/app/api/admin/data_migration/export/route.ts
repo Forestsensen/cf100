@@ -77,6 +77,8 @@ export async function POST(req: NextRequest) {
     }
     allUsers = Array.from(new Set(allUsers));
 
+    console.log('[导出] 用户列表:', allUsers);
+
     // 为每个用户收集数据
     for (const username of allUsers) {
       const userData = {
@@ -136,15 +138,28 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// 辅助函数：获取用户密码
+// 辅助函数：获取用户密码（兼容 D1 和 Redis 存储）
 async function getUserPassword(username: string): Promise<string | null> {
   try {
     const storage = (db as any).storage;
+
+    // D1 存储：通过 getDatabase() 查 users 表
+    if (storage && typeof storage.getDatabase === 'function') {
+      const d1 = await storage.getDatabase();
+      const result = await d1
+        .prepare('SELECT password FROM users WHERE username = ?')
+        .bind(username)
+        .first<{ password: string }>();
+      return result?.password || null;
+    }
+
+    // Redis/Upstash 存储
     if (storage && typeof storage.client?.get === 'function') {
       const passwordKey = `u:${username}:pwd`;
       const password = await storage.client.get(passwordKey);
       return password;
     }
+
     return null;
   } catch (error) {
     console.error(`获取用户 ${username} 密码失败:`, error);
