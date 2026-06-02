@@ -115,70 +115,103 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
   try {
     console.log('[测速] fetch方案开始, url:', m3u8Url);
 
-    // ---- 1. ping 测量 ----
-    const pingStart = performance.now();
-    let pingTime = 0;
-    fetch(proxy(m3u8Url), { method: 'HEAD', signal: controller.signal })
-      .then(() => { pingTime = performance.now() - pingStart; })
-      .catch(() => { pingTime = performance.now() - pingStart; });
-
-    // ---- 2. 下载 m3u8 文本 ----
+    // ---- 1. 下载 m3u8 文本（同时用 TTFB 测 ping）----
+    const m3u8Start = performance.now();
     const m3u8Resp = await fetch(proxy(m3u8Url), { signal: controller.signal });
     if (!m3u8Resp.ok) {
       throw new Error(`m3u8请求失败: ${m3u8Resp.status}`);
     }
+    const pingTime = Math.round(performance.now() - m3u8Start);
     const m3u8Text = await m3u8Resp.text();
 
-    // ---- 3. 解析分辨率 + 分片地址 ----
+    // ---- 2. 解析分辨率 + 分片地址 ----
     let quality = '未知';
-    // 解析分辨率标签，优先级: RESOLUTION > BANDWIDTH 标签名 > 默认
+    // 解析分辨率标签
     const resMatch = m3u8Text.match(/RESOLUTION=(\d+)x(\d+)/);
     if (resMatch) {
       const w = parseInt(resMatch[1]);
       quality = w >= 3840 ? '4K' : w >= 2560 ? '2K' : w >= 1920 ? '1080p' : w >= 1280 ? '720p' : w >= 854 ? '480p' : 'SD';
     }
 
-    // 收集分片地址（.ts 或纯URL行）
+    // 收集分片地址（.ts 或纯URL行，跳过子m3u8）
     const segmentUrls: string[] = [];
     for (const line of m3u8Text.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) continue;
-      // 如果是多码率 master playlist，跳过子 m3u8 路径
       if (trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?')) continue;
-      // 拼接绝对路径
       const fullUrl = trimmed.startsWith('http') ? trimmed : m3u8Base + trimmed;
       segmentUrls.push(fullUrl);
     }
 
-    // 如果没有分片但有子 m3u8（master playlist），取第一个子 m3u8 的分片
+    // 如果没有分片 → master playlist → 进入子m3u8
     if (segmentUrls.length === 0) {
-      const subM3u8Match = m3u8Text.match(/^(https?:\/\/[^\s]+\.m3u8[^\s]*)/m);
-      if (subM3u8Match) {
-        const subUrl = subM3u8Match[1].startsWith('http') ? subM3u8Match[1] : m3u8Base + subM3u8Match[1];
+      // 匹配子m3u8路径（支持绝对路径和相对路径）
+      // master playlist 格式: #EXT-X-STREAM-INF:BANDWIDTH=xxx 下一行是URI
+      const lines = m3u8Text.split('\n');
+      let bestBandwidth = 0;
+      let bestSubUrl = '';
+
+      for (let i = 0; i < lines.length - 1; i++) {
+        const line = lines[i].trim();
+        if (!line.includes('#EXT-X-STREAM-INF')) continue;
+
+        const bwMatch = line.match(/BANDWIDTH=(\d+)/);
+        const bw = bwMatch ? parseInt(bwMatch[1]) : 0;
+        // URI 在下一行（跳过空行）
+        let uri = '';
+        for (let j = i + 1; j < lines.length; j++) {
+          const next = lines[j].trim();
+          if (next && !next.startsWith('#')) { uri = next; break; }
+        }
+        if (!uri) continue;
+
+        if (bw > bestBandwidth) {
+          bestBandwidth = bw;
+          bestSubUrl = uri;
+        }
+      }
+
+      // 如果没找到 STREAM-INF，直接取第一个非注释非空行
+      if (!bestSubUrl) {
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          bestSubUrl = trimmed;
+          break;
+        }
+      }
+
+      if (bestSubUrl) {
+        const subUrl = bestSubUrl.startsWith('http') ? bestSubUrl : m3u8Base + bestSubUrl;
         console.log('[测速] 进入子m3u8:', subUrl);
-        const subResp = await fetch(proxy(subUrl), { signal: controller.signal });
-        if (subResp.ok) {
-          const subText = await subResp.text();
-          // 再次尝试解析分辨率
-          if (quality === '未知') {
-            const subRes = subText.match(/RESOLUTION=(\d+)x(\d+)/);
-            if (subRes) {
-              const w = parseInt(subRes[1]);
-              quality = w >= 3840 ? '4K' : w >= 2560 ? '2K' : w >= 1920 ? '1080p' : w >= 1280 ? '720p' : w >= 854 ? '480p' : 'SD';
+        try {
+          const subResp = await fetch(proxy(subUrl), { signal: controller.signal });
+          if (subResp.ok) {
+            const subText = await subResp.text();
+            // 再次尝试解析分辨率
+            if (quality === '未知') {
+              const subRes = subText.match(/RESOLUTION=(\d+)x(\d+)/);
+              if (subRes) {
+                const w = parseInt(subRes[1]);
+                quality = w >= 3840 ? '4K' : w >= 2560 ? '2K' : w >= 1920 ? '1080p' : w >= 1280 ? '720p' : w >= 854 ? '480p' : 'SD';
+              }
+            }
+            const subBase = subUrl.substring(0, subUrl.lastIndexOf('/') + 1);
+            for (const line of subText.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              if (trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?')) continue;
+              const fullUrl = trimmed.startsWith('http') ? trimmed : subBase + trimmed;
+              segmentUrls.push(fullUrl);
             }
           }
-          const subBase = subUrl.substring(0, subUrl.lastIndexOf('/') + 1);
-          for (const line of subText.split('\n')) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) continue;
-            const fullUrl = trimmed.startsWith('http') ? trimmed : subBase + trimmed;
-            segmentUrls.push(fullUrl);
-          }
+        } catch (e) {
+          console.log('[测速] 子m3u8失败:', e instanceof Error ? e.message : e);
         }
       }
     }
 
-    // ---- 4. 下载分片测速 ----
+    // ---- 3. 下载分片测速 ----
     let loadSpeed = '未知';
     const MAX_SEGS = Math.min(3, segmentUrls.length);
 
