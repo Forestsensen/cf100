@@ -81,8 +81,8 @@ export async function GET(request: NextRequest) {
 // 保守设置为 40，留 10 次余量给配置刷新等其他操作
 const MAX_SUBREQUESTS = 40;
 
-// 24 小时（毫秒），用于跳过近期已检查的记录
-const SKIP_WITHIN_24H = 24 * 60 * 60 * 1000;
+// 2 小时（毫秒），用于跳过近期已检查的记录（原24h导致集数更新滞后）
+const SKIP_WITHIN_2H = 2 * 60 * 60 * 1000;
 
 // 源站连续失败次数阈值，超过后跳过该源站剩余记录
 const SOURCE_FAIL_THRESHOLD = 3;
@@ -232,7 +232,7 @@ async function cronJobWithReport(targetUser?: string) {
 
             // 跳过 24h 内已检查/更新的记录
             const now = Date.now();
-            if (record.save_time && now - record.save_time < SKIP_WITHIN_24H) {
+            if (record.save_time && now - record.save_time < SKIP_WITHIN_2H) {
               totalSkippedRecent++;
               return;
             }
@@ -306,7 +306,7 @@ async function cronJobWithReport(targetUser?: string) {
 
               // 跳过 24h 内已检查/更新的收藏
               const now = Date.now();
-              if ((fav as any).save_time && now - (fav as any).save_time < SKIP_WITHIN_24H) {
+              if ((fav as any).save_time && now - (fav as any).save_time < SKIP_WITHIN_2H) {
                 totalSkippedRecent++;
                 return;
               }
