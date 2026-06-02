@@ -85,10 +85,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '备份文件格式无效' }, { status: 400 });
     }
 
-    // 开始导入数据 - 先清空现有数据
-    await db.clearAllData();
-
-    // 导入管理员配置
+    // 导入管理员配置（合并模式，不清空现有数据）
     importData.data.adminConfig = configSelfCheck(importData.data.adminConfig);
     await db.saveAdminConfig(importData.data.adminConfig);
     await setCachedConfig(importData.data.adminConfig);

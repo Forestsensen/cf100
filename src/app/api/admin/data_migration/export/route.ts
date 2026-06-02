@@ -63,10 +63,18 @@ export async function POST(req: NextRequest) {
       }
     };
 
-    // 获取所有用户
+    // 获取所有用户（D1 users 表 + admin config 里的用户）
     let allUsers = await db.getAllUsers();
     // 添加站长用户
     allUsers.push(process.env.USERNAME);
+    // 添加 admin config 里的用户
+    if (config.UserConfig?.Users) {
+      for (const user of config.UserConfig.Users) {
+        if (user.username) {
+          allUsers.push(user.username);
+        }
+      }
+    }
     allUsers = Array.from(new Set(allUsers));
 
     // 为每个用户收集数据
