@@ -14,6 +14,11 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { SearchResult } from '@/lib/types';
+import {
+  SourceTestResult as StreamTestResult,
+  testAllSources,
+  testSingleSource,
+} from '@/lib/source-speed-test';
 
 import VideoCard from '@/components/VideoCard';
 
@@ -185,6 +190,10 @@ export default function SourceTestModule() {
   >('default');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [mounted, setMounted] = useState(false);
+  const [streamTestResults, setStreamTestResults] = useState<
+    Map<string, StreamTestResult>
+  >(new Map());
+  const [isStreamTesting, setIsStreamTesting] = useState(false);
 
   // 客户端挂载标记
   useEffect(() => {
@@ -275,6 +284,65 @@ export default function SourceTestModule() {
 
     await Promise.allSettled(testPromises);
     setIsTestingAll(false);
+  };
+
+  // 视频流测速（单个源）
+  const handleStreamTestSingle = async (source: ApiSite) => {
+    if (!source.api) {
+      alert('该源无 API 地址');
+      return;
+    }
+    setStreamTestResults(
+      (prev) =>
+        new Map(
+          prev.set(source.key, {
+            sourceKey: source.key,
+            sourceName: source.name,
+            m3u8Url: '',
+            resolution: { width: 0, height: 0 },
+            quality: '未知',
+            latency: -1,
+            speed: 0,
+            score: 0,
+          })
+        )
+    );
+    const result = await testSingleSource(
+      source.api,
+      source.key,
+      source.name,
+      searchKeyword || '电影'
+    );
+    setStreamTestResults((prev) => new Map(prev.set(source.key, result)));
+  };
+
+  // 视频流测速（所有源）
+  const handleStreamTestAll = async () => {
+    const scope = onlyEnabled
+      ? sources.filter((s) => !s.disabled && s.api)
+      : sources.filter((s) => s.api);
+    if (scope.length === 0) return;
+
+    setIsStreamTesting(true);
+    setStreamTestResults(new Map());
+
+    const results = await testAllSources(
+      scope.map((s) => ({ api: s.api, key: s.key, name: s.name })),
+      searchKeyword || '电影',
+      (result, completed, total) => {
+        setStreamTestResults(
+          (prev) => new Map(prev.set(result.sourceKey, result))
+        );
+      }
+    );
+
+    // 按评分排序更新
+    const sortedMap = new Map<string, StreamTestResult>();
+    for (const r of results) {
+      sortedMap.set(r.sourceKey, r);
+    }
+    setStreamTestResults(sortedMap);
+    setIsStreamTesting(false);
   };
 
   // 查看详细结果
@@ -564,6 +632,26 @@ export default function SourceTestModule() {
               )}
               测试所有源
             </button>
+
+            <button
+              onClick={handleStreamTestAll}
+              disabled={
+                isStreamTesting ||
+                isTestingAll ||
+                sources.length === 0
+              }
+              className='px-4 sm:px-6 py-2.5 sm:py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700
+                       disabled:bg-gray-400 disabled:cursor-not-allowed
+                       flex items-center justify-center gap-2 whitespace-nowrap transition-colors'
+              title='测试视频流延迟、下载速度、分辨率，综合评分选择最佳源'
+            >
+              {isStreamTesting ? (
+                <ArrowPathIcon className='w-4 h-4 animate-spin' />
+              ) : (
+                <PlayIcon className='w-4 h-4' />
+              )}
+              视频流测速
+            </button>
           </div>
         </div>
       </div>
@@ -808,6 +896,17 @@ export default function SourceTestModule() {
                     </button>
 
                     <button
+                      onClick={() => handleStreamTestSingle(source)}
+                      disabled={isStreamTesting}
+                      className='px-3 py-2 sm:py-1 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors whitespace-nowrap'
+                      title='测试视频流延迟、速度、分辨率'
+                    >
+                      {streamTestResults.get(source.key)?.score
+                        ? `${streamTestResults.get(source.key)!.score.toFixed(0)}分`
+                        : '流测速'}
+                    </button>
+
+                    <button
                       onClick={() => toggleSource(source)}
                       className={`px-3 py-2 sm:py-1 text-sm rounded-lg transition-colors ${
                         source.disabled
@@ -863,6 +962,52 @@ export default function SourceTestModule() {
                     <span className='font-medium'>错误:</span> {result.error}
                   </div>
                 )}
+
+                {/* 视频流测速结果 */}
+                {(() => {
+                  const streamResult = streamTestResults.get(source.key);
+                  if (!streamResult) return null;
+                  return (
+                    <div className='mt-2 pt-2 border-t border-purple-200 dark:border-purple-800'>
+                      <div className='flex items-center gap-2 mb-1'>
+                        <span className='text-xs font-medium text-purple-600 dark:text-purple-400'>
+                          视频流测速
+                        </span>
+                        {streamResult.score > 0 && (
+                          <span className='px-1.5 py-0.5 text-xs font-bold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded'>
+                            {streamResult.score.toFixed(1)}分
+                          </span>
+                        )}
+                      </div>
+                      <div className='flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400'>
+                        <span>
+                          分辨率: {streamResult.quality}
+                          {streamResult.resolution.height > 0 &&
+                            ` (${streamResult.resolution.width}x${streamResult.resolution.height})`}
+                        </span>
+                        <span>
+                          延迟:{' '}
+                          {streamResult.latency > 0
+                            ? `${streamResult.latency}ms`
+                            : '失败'}
+                        </span>
+                        <span>
+                          速度:{' '}
+                          {streamResult.speed > 0
+                            ? streamResult.speed >= 1024
+                              ? `${(streamResult.speed / 1024).toFixed(1)} MB/s`
+                              : `${streamResult.speed.toFixed(1)} KB/s`
+                            : '失败'}
+                        </span>
+                      </div>
+                      {streamResult.error && (
+                        <div className='text-xs text-red-500 mt-1'>
+                          {streamResult.error}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
