@@ -92,6 +92,7 @@ export function processImageUrl(originalUrl: string): string {
 
 /**
  * 从m3u8地址获取视频质量等级和网络信息
+ * 优化：通过 CORSAPI 代理解决跨域，下载 3 个分片取平均速度
  * @param m3u8Url m3u8播放列表的URL
  * @returns Promise<{quality: string, loadSpeed: string, pingTime: number}> 视频质量等级和网络信息
  */
@@ -100,35 +101,37 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
   loadSpeed: string; // 自动转换为KB/s或MB/s
   pingTime: number; // 网络延迟（毫秒）
 }> {
+  // CORSAPI 代理地址
+  const CORSAPI_PROXY = 'https://tvdy.102624.xyz';
+  const proxyUrl = `${CORSAPI_PROXY}/?url=${encodeURIComponent(m3u8Url)}`;
+
   try {
-    // 直接使用m3u8 URL作为视频源，避免CORS问题
     return new Promise((resolve, reject) => {
       const video = document.createElement('video');
       video.muted = true;
       video.preload = 'metadata';
 
-      // 测量网络延迟（ping时间） - 使用m3u8 URL而不是ts文件
+      // 测量网络延迟（ping时间）- 通过代理
       const pingStart = performance.now();
       let pingTime = 0;
 
-      // 测量ping时间（使用m3u8 URL）
-      fetch(m3u8Url, { method: 'HEAD', mode: 'no-cors' })
+      fetch(proxyUrl, { method: 'HEAD' })
         .then(() => {
           pingTime = performance.now() - pingStart;
         })
         .catch(() => {
-          pingTime = performance.now() - pingStart; // 记录到失败为止的时间
+          pingTime = performance.now() - pingStart;
         });
 
-      // 固定使用hls.js加载
+      // 使用 hls.js 加载（通过代理）
       const hls = new Hls();
 
-      // 设置超时处理
+      // 设置超时处理（延长到 6 秒，因为需要测 3 个分片）
       const timeout = setTimeout(() => {
         hls.destroy();
         video.remove();
         reject(new Error('Timeout loading video metadata'));
-      }, 4000);
+      }, 6000);
 
       video.onerror = () => {
         clearTimeout(timeout);
@@ -141,6 +144,9 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
       let hasSpeedCalculated = false;
       let hasMetadataLoaded = false;
 
+      // 下载 3 个分片取平均速度（更准确）
+      const MAX_SEGMENTS = 3;
+      const segmentSpeeds: number[] = [];
       let fragmentStartTime = 0;
 
       // 检查是否可以返回结果
@@ -155,19 +161,14 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
             hls.destroy();
             video.remove();
 
-            // 根据视频宽度判断视频质量等级，使用经典分辨率的宽度作为分割点
+            // 根据视频宽度判断视频质量等级
             const quality =
-              width >= 3840
-                ? '4K' // 4K: 3840x2160
-                : width >= 2560
-                  ? '2K' // 2K: 2560x1440
-                  : width >= 1920
-                    ? '1080p' // 1080p: 1920x1080
-                    : width >= 1280
-                      ? '720p' // 720p: 1280x720
-                      : width >= 854
-                        ? '480p'
-                        : 'SD'; // 480p: 854x480
+              width >= 3840 ? '4K'
+                : width >= 2560 ? '2K'
+                  : width >= 1920 ? '1080p'
+                    : width >= 1280 ? '720p'
+                      : width >= 854 ? '480p'
+                        : 'SD';
 
             resolve({
               quality,
@@ -175,7 +176,6 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
               pingTime: Math.round(pingTime),
             });
           } else {
-            // webkit 无法获取尺寸，直接返回
             resolve({
               quality: '未知',
               loadSpeed: actualLoadSpeed,
@@ -190,35 +190,38 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
         fragmentStartTime = performance.now();
       });
 
-      // 监听片段加载完成，只需首个分片即可计算速度
+      // 监听片段加载完成，下载 3 个分片取平均速度
       hls.on(Hls.Events.FRAG_LOADED, (event: any, data: any) => {
-        if (
-          fragmentStartTime > 0 &&
-          data &&
-          data.payload &&
-          !hasSpeedCalculated
-        ) {
+        if (fragmentStartTime > 0 && data && data.payload) {
           const loadTime = performance.now() - fragmentStartTime;
           const size = data.payload.byteLength || 0;
 
           if (loadTime > 0 && size > 0) {
             const speedKBps = size / 1024 / (loadTime / 1000);
+            segmentSpeeds.push(speedKBps);
 
-            // 立即计算速度，无需等待更多分片
-            const avgSpeedKBps = speedKBps;
+            // 收集够 3 个分片或已标记完成
+            if (segmentSpeeds.length >= MAX_SEGMENTS && !hasSpeedCalculated) {
+              // 计算平均速度（去掉最高最低取平均，更稳定）
+              segmentSpeeds.sort((a, b) => a - b);
+              const avgSpeedKBps = segmentSpeeds.length > 2
+                ? segmentSpeeds.slice(1, -1).reduce((a, b) => a + b, 0) / (segmentSpeeds.length - 2)
+                : segmentSpeeds.reduce((a, b) => a + b, 0) / segmentSpeeds.length;
 
-            if (avgSpeedKBps >= 1024) {
-              actualLoadSpeed = `${(avgSpeedKBps / 1024).toFixed(1)} MB/s`;
-            } else {
-              actualLoadSpeed = `${avgSpeedKBps.toFixed(1)} KB/s`;
+              if (avgSpeedKBps >= 1024) {
+                actualLoadSpeed = `${(avgSpeedKBps / 1024).toFixed(1)} MB/s`;
+              } else {
+                actualLoadSpeed = `${avgSpeedKBps.toFixed(1)} KB/s`;
+              }
+              hasSpeedCalculated = true;
+              checkAndResolve();
             }
-            hasSpeedCalculated = true;
-            checkAndResolve(); // 尝试返回结果
           }
         }
       });
 
-      hls.loadSource(m3u8Url);
+      // 通过 CORSAPI 代理加载（解决跨域问题）
+      hls.loadSource(proxyUrl);
       hls.attachMedia(video);
 
       // 监听hls.js错误
