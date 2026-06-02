@@ -252,6 +252,7 @@ function PlayPageClient() {
               testResult,
             };
           } catch (error) {
+            console.error(`[优选测速] ${source.source_name} 失败:`, error instanceof Error ? error.message : error);
             return null;
           }
         })

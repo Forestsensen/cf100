@@ -106,6 +106,7 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
   const proxyUrl = `${CORSAPI_PROXY}/?url=${encodeURIComponent(m3u8Url)}`;
 
   try {
+    console.log('[测速] 开始测速, url:', m3u8Url, 'proxy:', proxyUrl);
     return new Promise((resolve, reject) => {
       const video = document.createElement('video');
       video.muted = true;
@@ -242,6 +243,7 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
       };
     });
   } catch (error) {
+    console.error('[测速] getVideoResolutionFromM3u8 失败:', error instanceof Error ? error.message : error);
     throw new Error(
       `Error getting video resolution: ${error instanceof Error ? error.message : String(error)
       }`
