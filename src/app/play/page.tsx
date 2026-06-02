@@ -190,7 +190,7 @@ function PlayPageClient() {
 
   // 优选阶段的实时测速进度（用于UI展示）
   const [preferringResults, setPreferringResults] = useState<
-    Array<{ sourceName: string; quality: string; loadSpeed: string; pingTime: number; score: number; done: boolean }>
+    Array<{ sourceName: string; quality: string; loadSpeed: string; pingTime: number; score: number; done: boolean; error?: boolean }>
   >([]);
 
   // 折叠状态（仅在 lg 及以上屏幕有效）
@@ -286,10 +286,9 @@ function PlayPageClient() {
           done: true,
         };
       });
-      // 填充未完成的源
+      // 填充未完成的源（completedSoFar可能含null，用??兜底）
       const progressList = sources.map((src, idx) => {
-        if (completedSoFar[idx]) return completedSoFar[idx];
-        return { sourceName: src.source_name, quality: '', loadSpeed: '', pingTime: 0, score: 0, done: false };
+        return completedSoFar[idx] ?? { sourceName: src.source_name, quality: '', loadSpeed: '', pingTime: 0, score: 0, done: false };
       });
       setPreferringResults([...progressList]);
     }
