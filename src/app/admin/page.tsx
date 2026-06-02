@@ -47,6 +47,7 @@ import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
 import DataMigration from '@/components/DataMigration';
 import PageLayout from '@/components/PageLayout';
+import SourceTestModule from '@/components/SourceTestModule';
 
 // 统一按钮样式系统
 const buttonStyles = {
@@ -4543,6 +4544,7 @@ function AdminPageClient() {
     categoryConfig: false,
     configFile: false,
     dataMigration: false,
+    sourceTest: false,
   });
 
   // 获取管理员配置
@@ -4759,6 +4761,21 @@ function AdminPageClient() {
                 <DataMigration onRefreshConfig={fetchConfig} />
               </CollapsibleTab>
             )}
+
+            {/* 源检测工具标签 */}
+            <CollapsibleTab
+              title='源检测工具'
+              icon={
+                <Video
+                  size={20}
+                  className='text-gray-600 dark:text-gray-400'
+                />
+              }
+              isExpanded={expandedTabs.sourceTest}
+              onToggle={() => toggleTab('sourceTest')}
+            >
+              <SourceTestModule />
+            </CollapsibleTab>
           </div>
         </div>
       </div>
