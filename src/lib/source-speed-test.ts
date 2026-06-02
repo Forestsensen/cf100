@@ -280,13 +280,27 @@ export async function testSingleSource(
     const searchUrl = `${actualApi}${separator}ac=videolist&wd=${encodeURIComponent(searchKeyword)}`;
     const searchRes = await proxyFetch(searchUrl);
     if (!searchRes.ok) {
-      return { ...emptyResult, error: `搜索失败: ${searchRes.status}` };
+      // 更友好的错误信息
+      const errorMsg = searchRes.status === 429 ? '请求过多被限流' :
+                       searchRes.status === 525 ? 'SSL握手失败' :
+                       searchRes.status === 502 ? '源站不可用' :
+                       searchRes.status === 504 ? '源站超时' :
+                       `搜索失败: ${searchRes.status}`;
+      return { ...emptyResult, error: errorMsg };
     }
 
-    const searchData = await searchRes.json();
+    // 处理非 JSON 响应（有些源返回纯文本错误）
+    let searchData: any;
+    try {
+      searchData = await searchRes.json();
+    } catch {
+      const text = await searchRes.text();
+      return { ...emptyResult, error: text.substring(0, 50) || '响应格式错误' };
+    }
+    
     const videos = searchData?.list || [];
     if (videos.length === 0) {
-      return { ...emptyResult, error: '无搜索结果' };
+      return { ...emptyResult, error: searchData?.msg || '无搜索结果' };
     }
 
     // 2. 获取第一个视频的 m3u8 URL
