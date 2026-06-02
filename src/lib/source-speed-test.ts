@@ -268,7 +268,9 @@ export async function testSingleSource(
 
   try {
     // 1. 搜索获取视频列表
-    const searchUrl = `${sourceApi}/api.php/provide/vod?ac=videolist&wd=${encodeURIComponent(searchKeyword)}`;
+    // 源 API URL 已经包含完整路径，直接加查询参数
+    const separator = sourceApi.includes('?') ? '&' : '?';
+    const searchUrl = `${sourceApi}${separator}ac=videolist&wd=${encodeURIComponent(searchKeyword)}`;
     const searchRes = await proxyFetch(searchUrl);
     if (!searchRes.ok) {
       return { ...emptyResult, error: `搜索失败: ${searchRes.status}` };
