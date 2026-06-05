@@ -109,9 +109,13 @@ export function useWatchingUpdates() {
       // 获取原始集数
       const originalEpisodes = record.original_episodes || record.total_episodes;
 
+      // 调试日志
+      console.log(`[追番更新] ${record.title}: API=${latestEpisodes}, 原始=${originalEpisodes}, 播放记录=${record.total_episodes}`);
+
       // 检查是否有新集数
       if (latestEpisodes > originalEpisodes) {
         const newEpisodes = latestEpisodes - originalEpisodes;
+        console.log(`[追番更新] ✨ ${record.title} 有新集: ${originalEpisodes} -> ${latestEpisodes} (+${newEpisodes})`);
         return {
           title: record.title,
           source_name: record.source_name,
@@ -128,7 +132,8 @@ export function useWatchingUpdates() {
       }
 
       return null;
-    } catch {
+    } catch (error) {
+      console.error(`[追番更新] ${record.title} 检查失败:`, error);
       return null;
     }
   }, []);
@@ -139,16 +144,19 @@ export function useWatchingUpdates() {
     if (!force) {
       const cached = getCachedUpdates();
       if (cached) {
+        console.log('[追番更新] 使用缓存数据');
         setUpdates(cached);
         return;
       }
     }
 
+    console.log('[追番更新] 开始检查更新...');
     setLoading(true);
     try {
       // 获取播放记录
       const response = await fetch('/api/playrecords');
       if (!response.ok) {
+        console.error('[追番更新] 获取播放记录失败:', response.status);
         setLoading(false);
         return;
       }
@@ -157,6 +165,8 @@ export function useWatchingUpdates() {
       const entries = Object.entries(records)
         .map(([key, record]) => ({ ...record, key }))
         .filter(r => r.total_episodes > 1); // 只检查多集剧
+
+      console.log(`[追番更新] 找到 ${entries.length} 个多集剧待检查`);
 
       if (entries.length === 0) {
         const emptyResult: WatchingUpdate = {
@@ -188,11 +198,12 @@ export function useWatchingUpdates() {
         updatedSeries: results,
       };
 
+      console.log(`[追番更新] 检查完成: ${result.updatedCount} 个有新集`);
       setUpdates(result);
       setCachedUpdates(result);
       setLastCheck(Date.now());
-    } catch {
-      // ignore
+    } catch (error) {
+      console.error('[追番更新] 检查失败:', error);
     } finally {
       setLoading(false);
     }
