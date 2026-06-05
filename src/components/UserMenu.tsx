@@ -3,6 +3,7 @@
 'use client';
 
 import {
+  Bell,
   Check,
   ChevronDown,
   ExternalLink,
@@ -35,6 +36,7 @@ export const UserMenu: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isVersionPanelOpen, setIsVersionPanelOpen] = useState(false);
+  const [isUpdatesOpen, setIsUpdatesOpen] = useState(false);
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [storageType, setStorageType] = useState<string>('localstorage');
   const [mounted, setMounted] = useState(false);
@@ -44,7 +46,7 @@ export const UserMenu: React.FC = () => {
 
   // Body 滚动锁定 - 使用 overflow 方式避免布局问题
   useEffect(() => {
-    if (isSettingsOpen || isChangePasswordOpen) {
+    if (isSettingsOpen || isChangePasswordOpen || isUpdatesOpen) {
       const body = document.body;
       const html = document.documentElement;
 
@@ -63,7 +65,7 @@ export const UserMenu: React.FC = () => {
         html.style.overflow = originalHtmlOverflow;
       };
     }
-  }, [isSettingsOpen, isChangePasswordOpen]);
+  }, [isSettingsOpen, isChangePasswordOpen, isUpdatesOpen]);
 
   // 设置相关状态
   const [defaultAggregateSearch, setDefaultAggregateSearch] = useState(true);
@@ -291,6 +293,15 @@ export const UserMenu: React.FC = () => {
     setNewPassword('');
     setConfirmPassword('');
     setPasswordError('');
+  };
+
+  const handleUpdates = () => {
+    setIsOpen(false);
+    setIsUpdatesOpen(true);
+  };
+
+  const handleCloseUpdates = () => {
+    setIsUpdatesOpen(false);
   };
 
   const handleSubmitChangePassword = async () => {
@@ -531,6 +542,22 @@ export const UserMenu: React.FC = () => {
             <Settings className='w-4 h-4 text-gray-500 dark:text-gray-400' />
             <span className='font-medium'>设置</span>
           </button>
+
+          {/* 更新提醒按钮 */}
+          {watchingUpdates?.hasUpdates && (
+            <button
+              onClick={handleUpdates}
+              className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm relative'
+            >
+              <Bell className='w-4 h-4 text-gray-500 dark:text-gray-400' />
+              <span className='font-medium'>更新提醒</span>
+              {watchingUpdates.updatedCount > 0 && (
+                <span className='ml-auto inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-500 rounded-full'>
+                  {watchingUpdates.updatedCount > 99 ? '99+' : watchingUpdates.updatedCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* 管理面板按钮 */}
           {showAdminPanel && (
@@ -1094,6 +1121,112 @@ export const UserMenu: React.FC = () => {
     </>
   );
 
+  // 更新提醒面板内容
+  const updatesPanel = (
+    <>
+      {/* 背景遮罩 */}
+      <div
+        className='fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000]'
+        onClick={handleCloseUpdates}
+        onTouchMove={(e) => e.preventDefault()}
+        onWheel={(e) => e.preventDefault()}
+        style={{ touchAction: 'none' }}
+      />
+
+      {/* 更新弹窗 */}
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] flex flex-col'>
+        <div
+          className='flex-1 p-6 overflow-y-auto'
+          data-panel-content
+          style={{ touchAction: 'pan-y', overscrollBehavior: 'contain' }}
+        >
+          {/* 标题栏 */}
+          <div className='flex items-center justify-between mb-6'>
+            <div className='flex items-center gap-3'>
+              <h3 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+                更新提醒
+              </h3>
+              {watchingUpdates && watchingUpdates.updatedCount > 0 && (
+                <span className='inline-flex items-center gap-1 text-sm text-red-500'>
+                  <div className='w-2 h-2 bg-red-500 rounded-full animate-pulse'></div>
+                  {watchingUpdates.updatedCount}部有新集
+                </span>
+              )}
+            </div>
+            <button
+              onClick={handleCloseUpdates}
+              className='w-8 h-8 p-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+              aria-label='Close'
+            >
+              <X className='w-full h-full' />
+            </button>
+          </div>
+
+          {/* 更新列表 */}
+          {!watchingUpdates?.updatedSeries || watchingUpdates.updatedSeries.length === 0 ? (
+            <div className='text-center py-8'>
+              <div className='text-gray-500 dark:text-gray-400 text-sm'>
+                暂无新剧集更新
+              </div>
+              <div className='text-xs text-gray-400 dark:text-gray-500 mt-2'>
+                系统会定期检查您观看过的剧集是否有新集数更新
+              </div>
+            </div>
+          ) : (
+            <div className='space-y-3'>
+              {watchingUpdates.updatedSeries.map((series, index) => (
+                <div
+                  key={`${series.sourceKey}-${series.videoId}-${index}`}
+                  className='flex items-center gap-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer'
+                  onClick={() => {
+                    handleCloseUpdates();
+                    router.push(`/play?source=${series.sourceKey}&id=${series.videoId}&title=${encodeURIComponent(series.title)}`);
+                  }}
+                >
+                  {/* 封面 */}
+                  <div className='w-12 h-16 rounded overflow-hidden flex-shrink-0'>
+                    <img
+                      src={series.cover}
+                      alt={series.title}
+                      className='w-full h-full object-cover'
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/placeholder.png';
+                      }}
+                    />
+                  </div>
+
+                  {/* 信息 */}
+                  <div className='flex-1 min-w-0'>
+                    <div className='font-medium text-gray-900 dark:text-gray-100 text-sm truncate'>
+                      {series.title}
+                    </div>
+                    <div className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                      {series.source_name} · 看到第{series.currentEpisode}集
+                    </div>
+                  </div>
+
+                  {/* 新集徽章 */}
+                  <div className='flex-shrink-0'>
+                    <span className='inline-flex items-center justify-center px-2 py-1 text-xs font-bold text-white bg-red-500 rounded-full'>
+                      +{series.newEpisodes}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 底部说明 */}
+          <div className='mt-6 pt-4 border-t border-gray-200 dark:border-gray-700'>
+            <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
+              点击剧集即可跳转观看新更新的集数
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <>
       <div className='relative'>
@@ -1128,6 +1261,9 @@ export const UserMenu: React.FC = () => {
       {isChangePasswordOpen &&
         mounted &&
         createPortal(changePasswordPanel, document.body)}
+
+      {/* 使用 Portal 将更新提醒面板渲染到 document.body */}
+      {isUpdatesOpen && mounted && createPortal(updatesPanel, document.body)}
 
       {/* 版本面板 */}
       <VersionPanel
