@@ -21,6 +21,7 @@ import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { CURRENT_VERSION } from '@/lib/version';
 import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
 
+import { useWatchingUpdates } from '@/hooks/useWatchingUpdates';
 import { VersionPanel } from './VersionPanel';
 
 interface AuthInfo {
@@ -37,6 +38,9 @@ export const UserMenu: React.FC = () => {
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [storageType, setStorageType] = useState<string>('localstorage');
   const [mounted, setMounted] = useState(false);
+
+  // 追番更新检查
+  const { updates: watchingUpdates } = useWatchingUpdates();
 
   // Body 滚动锁定 - 使用 overflow 方式避免布局问题
   useEffect(() => {
@@ -1100,8 +1104,17 @@ export const UserMenu: React.FC = () => {
         >
           <User className='w-full h-full' />
         </button>
+        {/* 版本更新指示器 */}
         {updateStatus === UpdateStatus.HAS_UPDATE && (
           <div className='absolute top-[2px] right-[2px] w-2 h-2 bg-yellow-500 rounded-full'></div>
+        )}
+        {/* 追番更新指示器 */}
+        {watchingUpdates?.hasUpdates && (
+          <div className='absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 rounded-full flex items-center justify-center px-1'>
+            <span className='text-[10px] text-white font-bold'>
+              {watchingUpdates.updatedCount}
+            </span>
+          </div>
         )}
       </div>
 

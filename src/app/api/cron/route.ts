@@ -245,12 +245,15 @@ async function cronJobWithReport(targetUser?: string) {
 
             const episodeCount = detail.episodes?.length || 0;
             if (episodeCount > 0 && episodeCount !== record.total_episodes) {
+              // 保留原始集数（如果存在），否则使用当前集数
+              const originalEpisodes = record.original_episodes || record.total_episodes;
               await db.savePlayRecord(user, source, id, {
                 title: detail.title || record.title,
                 source_name: record.source_name,
                 cover: detail.poster || record.cover,
                 index: record.index,
                 total_episodes: episodeCount,
+                original_episodes: originalEpisodes, // 保留原始集数
                 play_time: record.play_time,
                 year: detail.year || record.year,
                 total_time: record.total_time,
@@ -258,7 +261,7 @@ async function cronJobWithReport(targetUser?: string) {
                 search_title: record.search_title,
               });
               cronLog(
-                `✓ 更新播放记录: ${record.title} (${record.total_episodes} -> ${episodeCount})`
+                `✓ 更新播放记录: ${record.title} (${record.total_episodes} -> ${episodeCount}, 原始: ${originalEpisodes})`
               );
               totalUpdated++;
             } else {
