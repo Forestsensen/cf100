@@ -230,9 +230,9 @@ async function cronJobWithReport(targetUser?: string) {
             const [source, id] = key.split('+');
             if (!source || !id) return;
 
-            // 跳过 24h 内已检查/更新的记录
+            // 跳过 6h 内已检查/更新的记录（但如果缺少 original_episodes 则不跳过）
             const now = Date.now();
-            if (record.save_time && now - record.save_time < SKIP_WITHIN_6H) {
+            if (record.save_time && now - record.save_time < SKIP_WITHIN_6H && record.original_episodes) {
               totalSkippedRecent++;
               return;
             }
@@ -266,7 +266,15 @@ async function cronJobWithReport(targetUser?: string) {
               totalUpdated++;
             } else {
               // 集数未变化，也更新 save_time 标记为"已检查"
-              if (record.save_time !== now) {
+              // 如果缺少 original_episodes，补充设置
+              if (!record.original_episodes) {
+                await db.savePlayRecord(user, source, id, {
+                  ...record,
+                  original_episodes: record.total_episodes,
+                  save_time: now,
+                });
+                cronLog(`✓ 补充原始集数: ${record.title} = ${record.total_episodes}`);
+              } else if (record.save_time !== now) {
                 await db.savePlayRecord(user, source, id, {
                   ...record,
                   save_time: now,
