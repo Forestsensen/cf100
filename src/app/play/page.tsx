@@ -581,8 +581,12 @@ function PlayPageClient() {
       // 爱艺奇/爱奇艺 广告特征
       'cupid.iqiyi.com', 'afp.iqiyi.com', 'ad.m.iqiyi.com',
       'policy.video.iqiyi.com', 't7.cupid.iqiyi.com',
-      // 猫眼广告特征
+      // 猫眼广告特征（更新）
       'maoyan.*ad', 'analytics.meituan', 'stat.mafengwo',
+      'maoyan.com/ad', 'maoyan.com/advert', 'maoyan.com/tracking',
+      'ad.maoyan.com', 'analytics.maoyan.com',
+      'meituan.com/ad', 'meituan.com/advert', 'meituan.com/tracking',
+      's3plus.meituan.com', 'report.meituan.com',
       // 电影天堂/艾旦影视/优质资源 通用广告特征
       'pre_roll', 'mid_roll', 'post_roll',
       'preroll', 'midroll', 'postroll',
