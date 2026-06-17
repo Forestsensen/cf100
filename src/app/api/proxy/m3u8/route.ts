@@ -94,6 +94,69 @@ export async function GET(request: Request) {
   }
 }
 
+// 广告过滤关键字列表（服务端过滤，适用于所有浏览器包括 Safari）
+const AD_KEYWORDS = [
+  // 通用广告关键字
+  'sponsor', '/ad/', '/ads/', 'advert', 'advertisement',
+  '/adjump', 'redtraffic',
+  // 爱艺奇/爱奇艺 广告特征
+  'cupid.iqiyi.com', 'afp.iqiyi.com', 'ad.m.iqiyi.com',
+  'policy.video.iqiyi.com', 't7.cupid.iqiyi.com',
+  // 猫眼广告特征
+  'maoyan.*ad', 'analytics.meituan', 'stat.mafengwo',
+  'maoyan.com/ad', 'maoyan.com/advert', 'maoyan.com/tracking',
+  'ad.maoyan.com', 'analytics.maoyan.com',
+  'meituan.com/ad', 'meituan.com/advert', 'meituan.com/tracking',
+  's3plus.meituan.com', 'report.meituan.com',
+  // 电影天堂/艾旦影视/优质资源 通用广告特征
+  'pre_roll', 'mid_roll', 'post_roll',
+  'preroll', 'midroll', 'postroll',
+  // 广告追踪像素
+  '.gif?', '.png?ad',
+  // 广告 CDN 域名
+  'doubleclick', 'googlesyndication', 'adservice',
+];
+
+/**
+ * 过滤 M3U8 中的广告分段（服务端过滤，适用于所有浏览器）
+ */
+function filterAdsFromM3U8(content: string): string {
+  const lines = content.split('\n');
+  const filteredLines: string[] = [];
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // 跳过 #EXT-X-DISCONTINUITY 标识
+    if (line.includes('#EXT-X-DISCONTINUITY')) {
+      i++;
+      continue;
+    }
+
+    // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
+    if (line.includes('#EXTINF:')) {
+      if (i + 1 < lines.length) {
+        const nextLine = lines[i + 1];
+        const containsAd = AD_KEYWORDS.some(keyword =>
+          nextLine.toLowerCase().includes(keyword.toLowerCase())
+        );
+
+        if (containsAd) {
+          // 跳过 EXTINF 行和 URL 行
+          i += 2;
+          continue;
+        }
+      }
+    }
+
+    filteredLines.push(line);
+    i++;
+  }
+
+  return filteredLines.join('\n');
+}
+
 function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allowCORS: boolean) {
   // 从 referer 头提取协议信息
   const referer = req.headers.get('referer');
@@ -110,7 +173,10 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
   const host = req.headers.get('host');
   const proxyBase = `${protocol}://${host}/api/proxy`;
 
-  const lines = content.split('\n');
+  // 先过滤广告，再重写 URL
+  const filteredContent = filterAdsFromM3U8(content);
+
+  const lines = filteredContent.split('\n');
   const rewrittenLines: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {

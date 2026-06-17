@@ -483,6 +483,10 @@ function PlayPageClient() {
     return Math.round(score * 100) / 100; // 保留两位小数
   };
 
+  // 检测是否为 Safari 浏览器
+  const isSafari = typeof window !== 'undefined' &&
+    /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
   // 更新视频地址
   const updateVideoUrl = (
     detailData: SearchResult | null,
@@ -496,7 +500,14 @@ function PlayPageClient() {
       setVideoUrl('');
       return;
     }
-    const newUrl = detailData?.episodes[episodeIndex] || '';
+    let newUrl = detailData?.episodes[episodeIndex] || '';
+
+    // Safari 浏览器使用服务端广告过滤（因为 Safari 原生 HLS 不经过 hls.js）
+    if (isSafari && blockAdEnabledRef.current && newUrl && newUrl.includes('.m3u8')) {
+      newUrl = `/api/proxy/filter-m3u8?url=${encodeURIComponent(newUrl)}`;
+      console.log('[Safari] 使用服务端广告过滤:', newUrl);
+    }
+
     if (newUrl !== videoUrl) {
       setVideoUrl(newUrl);
     }
