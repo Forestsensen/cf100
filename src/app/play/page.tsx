@@ -483,9 +483,27 @@ function PlayPageClient() {
     return Math.round(score * 100) / 100; // 保留两位小数
   };
 
-  // 检测是否为 Safari 浏览器
-  const isSafari = typeof window !== 'undefined' &&
-    /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  // 检测是否为 Safari 浏览器（包括 iOS Safari）
+  const isSafari = typeof window !== 'undefined' && (() => {
+    const ua = navigator.userAgent;
+    // iOS Safari 检测
+    const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+    const isIOS13Plus = ua.includes('Macintosh') && navigator.maxTouchPoints > 1;
+    // macOS Safari 检测（排除 Chrome）
+    const isMacSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
+    return isIOS || isIOS13Plus || isMacSafari;
+  })();
+
+  // 判断 URL 是否为 HLS 流
+  const isHlsUrl = (url: string): boolean => {
+    if (!url) return false;
+    const lowerUrl = url.toLowerCase();
+    return lowerUrl.includes('.m3u8') ||
+           lowerUrl.includes('.m3u') ||
+           lowerUrl.includes('/hls/') ||
+           lowerUrl.includes('format=m3u8') ||
+           lowerUrl.includes('type=m3u8');
+  };
 
   // 更新视频地址
   const updateVideoUrl = (
@@ -503,7 +521,7 @@ function PlayPageClient() {
     let newUrl = detailData?.episodes[episodeIndex] || '';
 
     // Safari 浏览器使用服务端广告过滤（因为 Safari 原生 HLS 不经过 hls.js）
-    if (isSafari && blockAdEnabledRef.current && newUrl && newUrl.includes('.m3u8')) {
+    if (isSafari && blockAdEnabledRef.current && isHlsUrl(newUrl)) {
       newUrl = `/api/proxy/filter-m3u8?url=${encodeURIComponent(newUrl)}`;
       console.log('[Safari] 使用服务端广告过滤:', newUrl);
     }
