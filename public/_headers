@@ -1,0 +1,31 @@
+# ⚠️ HTML 文件不缓存（确保每次都能拉取最新资源引用）
+/*
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# 静态资源缓存（1年）- Next.js 文件名带 hash，内容变化文件名变
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 图片缓存（30天）
+/*.png
+  Cache-Control: public, max-age=2592000
+
+/*.jpg
+  Cache-Control: public, max-age=2592000
+
+/*.webp
+  Cache-Control: public, max-age=2592000
+
+/*.svg
+  Cache-Control: public, max-age=2592000
+
+# 字体缓存（1年）
+/*.woff2
+  Cache-Control: public, max-age=31536000
+
+/*.woff
+  Cache-Control: public, max-age=31536000
+
+# API 缓存（不缓存）
+/api/*
+  Cache-Control: no-store, no-cache, must-revalidate
