@@ -7,60 +7,33 @@ import { getBaseUrl, resolveUrl } from "@/lib/live";
 
 export const runtime = 'edge';
 
-// 已知的广告域名模式
-const AD_DOMAIN_PATTERNS: RegExp[] = [
-  /ads?\./i,
-  /adserver/i,
-  /adbreak/i,
-  /doubleclick\.net/i,
-  /googlesyndication/i,
-  /googleadservices/i,
-  /adsterra/i,
-  /propellerads/i,
-  /popads/i,
-  /revive-adserver/i,
-  /advert/i,
-  /sponsor/i,
-  /mediaad\.org/i,
-];
-
-// 广告相关 URL 路径模式
-const AD_PATH_PATTERNS: RegExp[] = [
-  /\/ad[s]?\//i,
-  /\/advert/i,
-  /\/commercial\//i,
-  /\/sponsor\//i,
-  /\/banner\//i,
-  /\/preroll\//i,
-  /\/midroll\//i,
-  /\/postroll\//i,
-  /\/ad-?segment/i,
-  /\/ad_?break/i,
+// 已知的广告域名（精确匹配，避免误杀正常 CDN）
+const AD_DOMAINS: string[] = [
+  'doubleclick.net',
+  'googlesyndication.com',
+  'googleadservices.com',
+  'adsterra.com',
+  'propellerads.com',
+  'popads.net',
+  'revive-adserver.net',
+  'mediaad.org',
 ];
 
 /**
- * 检测一行是否为广告片段 URL
+ * 检测一行是否为广告片段 URL（保守策略，只匹配确定的广告）
  */
 function isAdSegmentUrl(line: string): boolean {
-  for (const pattern of AD_DOMAIN_PATTERNS) {
-    if (pattern.test(line)) return true;
-  }
-  for (const pattern of AD_PATH_PATTERNS) {
-    if (pattern.test(line)) return true;
-  }
-  // 关键词匹配
-  const lower = line.toLowerCase();
-  if (
-    lower.includes('/ad/') ||
-    lower.includes('/ads/') ||
-    lower.includes('/advert') ||
-    lower.includes('adsegment') ||
-    lower.includes('ad_break') ||
-    lower.includes('preroll') ||
-    lower.includes('midroll') ||
-    lower.includes('postroll')
-  ) {
-    return true;
+  try {
+    const url = new URL(line);
+    const hostname = url.hostname.toLowerCase();
+    // 精确匹配广告域名
+    for (const domain of AD_DOMAINS) {
+      if (hostname === domain || hostname.endsWith('.' + domain)) {
+        return true;
+      }
+    }
+  } catch {
+    // URL 解析失败，不认为是广告
   }
   return false;
 }
