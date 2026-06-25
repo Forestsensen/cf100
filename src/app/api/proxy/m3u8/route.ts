@@ -7,6 +7,145 @@ import { getBaseUrl, resolveUrl } from "@/lib/live";
 
 export const runtime = 'edge';
 
+// 已知的广告域名模式
+const AD_DOMAIN_PATTERNS: RegExp[] = [
+  /ads?\./i,
+  /adserver/i,
+  /adbreak/i,
+  /doubleclick\.net/i,
+  /googlesyndication/i,
+  /googleadservices/i,
+  /adsterra/i,
+  /propellerads/i,
+  /popads/i,
+  /revive-adserver/i,
+  /advert/i,
+  /sponsor/i,
+  /mediaad\.org/i,
+];
+
+// 广告相关 URL 路径模式
+const AD_PATH_PATTERNS: RegExp[] = [
+  /\/ad[s]?\//i,
+  /\/advert/i,
+  /\/commercial\//i,
+  /\/sponsor\//i,
+  /\/banner\//i,
+  /\/preroll\//i,
+  /\/midroll\//i,
+  /\/postroll\//i,
+  /\/ad-?segment/i,
+  /\/ad_?break/i,
+];
+
+/**
+ * 检测一行是否为广告片段 URL
+ */
+function isAdSegmentUrl(line: string): boolean {
+  for (const pattern of AD_DOMAIN_PATTERNS) {
+    if (pattern.test(line)) return true;
+  }
+  for (const pattern of AD_PATH_PATTERNS) {
+    if (pattern.test(line)) return true;
+  }
+  // 关键词匹配
+  const lower = line.toLowerCase();
+  if (
+    lower.includes('/ad/') ||
+    lower.includes('/ads/') ||
+    lower.includes('/advert') ||
+    lower.includes('adsegment') ||
+    lower.includes('ad_break') ||
+    lower.includes('preroll') ||
+    lower.includes('midroll') ||
+    lower.includes('postroll')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 检测广告起始标记
+ */
+function isAdStartMarker(line: string): boolean {
+  if (line.startsWith('#EXT-X-CUE-OUT')) return true;
+  if (line.startsWith('#EXT-X-SCTE35')) return true;
+  if (line.startsWith('#EXT-X-SCTE-OUT')) return true;
+  if (
+    line.startsWith('#EXT-X-DATERANGE') &&
+    (line.includes('CLASS="ad"') ||
+      line.includes('CLASS="commercial"') ||
+      line.includes('SCTE35-OUT'))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 检测广告结束标记
+ */
+function isAdEndMarker(line: string): boolean {
+  if (line.startsWith('#EXT-X-CUE-IN')) return true;
+  if (line.startsWith('#EXT-X-SCTE-IN')) return true;
+  if (line.startsWith('#EXT-X-DATERANGE') && line.includes('SCTE35-IN')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 过滤 M3U8 中的广告片段
+ */
+function filterAdsFromM3U8(content: string): string {
+  const lines = content.split('\n');
+  const result: string[] = [];
+  let inAdBlock = false;
+  let removedSegments = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // 广告起始标记
+    if (isAdStartMarker(trimmed)) {
+      inAdBlock = true;
+      removedSegments++;
+      continue;
+    }
+
+    // 广告结束标记
+    if (isAdEndMarker(trimmed)) {
+      inAdBlock = false;
+      continue;
+    }
+
+    // 在广告块内，跳过
+    if (inAdBlock) {
+      continue;
+    }
+
+    // 检测独立广告片段 URL
+    if (trimmed && !trimmed.startsWith('#') && isAdSegmentUrl(trimmed)) {
+      // 跳过前一行的 #EXTINF
+      if (result.length > 0 && result[result.length - 1].trim().startsWith('#EXTINF')) {
+        result.pop();
+      }
+      removedSegments++;
+      continue;
+    }
+
+    result.push(line);
+  }
+
+  if (removedSegments > 0) {
+    console.log(`[AdBlock] 已移除 ${removedSegments} 个广告片段`);
+  }
+
+  return result.join('\n');
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get('url');
@@ -22,6 +161,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Source not found' }, { status: 404 });
   }
   const ua = liveSource.ua || 'AptvPlayer/1.4.10';
+
+  // 获取去广告开关（默认开启）
+  const adBlockEnabled = config.SiteConfig?.EnableAdBlock !== false;
 
   let response: Response | null = null;
   let responseUsed = false;
@@ -53,8 +195,13 @@ export async function GET(request: Request) {
       // 使用最终的响应URL作为baseUrl，而不是原始的请求URL
       const baseUrl = getBaseUrl(finalUrl);
 
+      // 先过滤广告，再重写 URL
+      const filteredContent = adBlockEnabled
+        ? filterAdsFromM3U8(m3u8Content)
+        : m3u8Content;
+
       // 重写 M3U8 内容
-      const modifiedContent = rewriteM3U8Content(m3u8Content, baseUrl, request, allowCORS);
+      const modifiedContent = rewriteM3U8Content(filteredContent, baseUrl, request, allowCORS);
 
       const headers = new Headers();
       headers.set('Content-Type', contentType);
@@ -94,69 +241,6 @@ export async function GET(request: Request) {
   }
 }
 
-// 广告过滤关键字列表（服务端过滤，适用于所有浏览器包括 Safari）
-const AD_KEYWORDS = [
-  // 通用广告关键字
-  'sponsor', '/ad/', '/ads/', 'advert', 'advertisement',
-  '/adjump', 'redtraffic',
-  // 爱艺奇/爱奇艺 广告特征
-  'cupid.iqiyi.com', 'afp.iqiyi.com', 'ad.m.iqiyi.com',
-  'policy.video.iqiyi.com', 't7.cupid.iqiyi.com',
-  // 猫眼广告特征
-  'maoyan.*ad', 'analytics.meituan', 'stat.mafengwo',
-  'maoyan.com/ad', 'maoyan.com/advert', 'maoyan.com/tracking',
-  'ad.maoyan.com', 'analytics.maoyan.com',
-  'meituan.com/ad', 'meituan.com/advert', 'meituan.com/tracking',
-  's3plus.meituan.com', 'report.meituan.com',
-  // 电影天堂/艾旦影视/优质资源 通用广告特征
-  'pre_roll', 'mid_roll', 'post_roll',
-  'preroll', 'midroll', 'postroll',
-  // 广告追踪像素
-  '.gif?', '.png?ad',
-  // 广告 CDN 域名
-  'doubleclick', 'googlesyndication', 'adservice',
-];
-
-/**
- * 过滤 M3U8 中的广告分段（服务端过滤，适用于所有浏览器）
- */
-function filterAdsFromM3U8(content: string): string {
-  const lines = content.split('\n');
-  const filteredLines: string[] = [];
-
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // 跳过 #EXT-X-DISCONTINUITY 标识
-    if (line.includes('#EXT-X-DISCONTINUITY')) {
-      i++;
-      continue;
-    }
-
-    // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
-    if (line.includes('#EXTINF:')) {
-      if (i + 1 < lines.length) {
-        const nextLine = lines[i + 1];
-        const containsAd = AD_KEYWORDS.some(keyword =>
-          nextLine.toLowerCase().includes(keyword.toLowerCase())
-        );
-
-        if (containsAd) {
-          // 跳过 EXTINF 行和 URL 行
-          i += 2;
-          continue;
-        }
-      }
-    }
-
-    filteredLines.push(line);
-    i++;
-  }
-
-  return filteredLines.join('\n');
-}
-
 function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allowCORS: boolean) {
   // 从 referer 头提取协议信息
   const referer = req.headers.get('referer');
@@ -173,10 +257,7 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
   const host = req.headers.get('host');
   const proxyBase = `${protocol}://${host}/api/proxy`;
 
-  // 先过滤广告，再重写 URL
-  const filteredContent = filterAdsFromM3U8(content);
-
-  const lines = filteredContent.split('\n');
+  const lines = content.split('\n');
   const rewrittenLines: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {

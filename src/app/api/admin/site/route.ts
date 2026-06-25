@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
       DisableYellowFilter,
       FluidSearch,
       EnableWebLive,
+      EnableAdBlock,
     } = body as {
       SiteName: string;
       Announcement: string;
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
       DisableYellowFilter: boolean;
       FluidSearch: boolean;
       EnableWebLive: boolean;
+      EnableAdBlock: boolean;
     };
 
     // 参数校验
@@ -96,6 +98,7 @@ export async function POST(request: NextRequest) {
       DisableYellowFilter,
       FluidSearch,
       EnableWebLive: EnableWebLive ?? false,
+      EnableAdBlock: EnableAdBlock ?? true,
     };
 
     // 写入数据库

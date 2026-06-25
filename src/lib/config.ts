@@ -223,6 +223,7 @@ async function getInitConfig(configFile: string, subConfig: {
       FluidSearch:
         process.env.NEXT_PUBLIC_FLUID_SEARCH !== 'false',
       EnableWebLive: false,
+      EnableAdBlock: true,
     },
     UserConfig: {
       Users: [],

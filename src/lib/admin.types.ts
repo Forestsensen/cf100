@@ -17,6 +17,7 @@ export interface AdminConfig {
     DisableYellowFilter: boolean;
     FluidSearch: boolean;
     EnableWebLive: boolean;
+    EnableAdBlock: boolean;
     CustomAdFilterCode?: string;
     CustomAdFilterVersion?: number;
   };

@@ -270,6 +270,7 @@ interface SiteConfig {
   DisableYellowFilter: boolean;
   FluidSearch: boolean;
   EnableWebLive: boolean;
+  EnableAdBlock: boolean;
 }
 
 // 视频源数据类型
@@ -3397,6 +3398,7 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     DisableYellowFilter: false,
     FluidSearch: true,
     EnableWebLive: false,
+    EnableAdBlock: true,
   });
 
   // 豆瓣数据源相关状态
@@ -3460,6 +3462,7 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         DisableYellowFilter: config.SiteConfig.DisableYellowFilter || false,
         FluidSearch: config.SiteConfig.FluidSearch || true,
         EnableWebLive: config.SiteConfig.EnableWebLive ?? false,
+        EnableAdBlock: config.SiteConfig.EnableAdBlock ?? true,
       });
     }
   }, [config]);
@@ -3946,6 +3949,37 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         </p>
       </div>
 
+      {/* M3U8 去广告 */}
+      <div>
+        <label
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+        >
+          M3U8 去广告
+        </label>
+        <button
+          type='button'
+          onClick={() =>
+            setSiteSettings((prev) => ({
+              ...prev,
+              EnableAdBlock: !prev.EnableAdBlock,
+            }))
+          }
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${siteSettings.EnableAdBlock
+            ? buttonStyles.toggleOn
+            : buttonStyles.toggleOff
+            }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full ${buttonStyles.toggleThumb} transition-transform ${siteSettings.EnableAdBlock
+              ? buttonStyles.toggleThumbOn
+              : buttonStyles.toggleThumbOff
+              }`}
+          />
+        </button>
+        <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+          自动过滤 M3U8 播放列表中的广告片段（SCTE-35、广告域名、片头片尾广告等）。开启后所有客户端自动生效，无需额外配置。
+        </p>
+      </div>
 
       {/* 操作按钮 */}
       <div className='flex justify-end'>
