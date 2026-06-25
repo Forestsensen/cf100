@@ -208,7 +208,8 @@ export async function GET(request: Request) {
       headers.set('Access-Control-Allow-Origin', '*');
       headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       headers.set('Access-Control-Allow-Headers', 'Content-Type, Range, Origin, Accept');
-      headers.set('Cache-Control', 'no-cache');
+      // M3U8 缓存 8 秒，大幅减少源站请求
+      headers.set('Cache-Control', 'public, max-age=8, s-maxage=8');
       headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
       return new Response(modifiedContent, { headers });
     }
@@ -218,7 +219,8 @@ export async function GET(request: Request) {
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     headers.set('Access-Control-Allow-Headers', 'Content-Type, Range, Origin, Accept');
-    headers.set('Cache-Control', 'no-cache');
+    // M3U8 缓存 8 秒
+    headers.set('Cache-Control', 'public, max-age=8, s-maxage=8');
     headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
 
     // 直接返回视频流

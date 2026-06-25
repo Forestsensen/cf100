@@ -42,6 +42,8 @@ export async function GET(request: Request) {
     headers.set('Access-Control-Allow-Headers', 'Content-Type, Range, Origin, Accept');
     headers.set('Accept-Ranges', 'bytes');
     headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+    // TS 分片缓存 2 小时（分片内容不变，大幅减少源站请求）
+    headers.set('Cache-Control', 'public, max-age=7200, s-maxage=7200');
     const contentLength = response.headers.get('content-length');
     if (contentLength) {
       headers.set('Content-Length', contentLength);
