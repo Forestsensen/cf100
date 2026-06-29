@@ -26,7 +26,7 @@ async function searchWithCache(
   query: string,
   page: number,
   url: string,
-  timeoutMs = 8000
+  timeoutMs = 2000
 ): Promise<{ results: SearchResult[]; pageCount?: number }> {
   // 先查缓存
   const cached = getCachedSearchPage(apiSite.key, query, page);
@@ -57,7 +57,15 @@ async function searchWithCache(
       return { results: [] };
     }
 
-    const data = await response.json();
+    // 安全解析：防止 5xx HTML 响应导致 JSON.parse 崩溃
+    let data: any;
+    try {
+      const text = await response.text();
+      data = JSON.parse(text);
+    } catch {
+      // 返回的不是合法 JSON（可能是 502/503 HTML 页面），直接跳过
+      return { results: [] };
+    }
     if (
       !data ||
       !data.list ||
@@ -145,7 +153,7 @@ export async function searchFromApi(
       apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
 
     // 使用新的缓存搜索函数处理第一页
-    const firstPageResult = await searchWithCache(apiSite, query, 1, apiUrl, 8000);
+    const firstPageResult = await searchWithCache(apiSite, query, 1, apiUrl, 2000);
     const results = firstPageResult.results;
     const pageCountFromFirst = firstPageResult.pageCount;
 
@@ -170,7 +178,7 @@ export async function searchFromApi(
 
         const pagePromise = (async () => {
           // 使用新的缓存搜索函数处理分页
-          const pageResult = await searchWithCache(apiSite, query, page, pageUrl, 8000);
+          const pageResult = await searchWithCache(apiSite, query, page, pageUrl, 2000);
           return pageResult.results;
         })();
 
@@ -208,12 +216,19 @@ export async function getDetailFromApi(
   const detailUrl = `${apiSite.api}${API_CONFIG.detail.path}${id}`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-  const response = await fetch(detailUrl, {
-    headers: API_CONFIG.detail.headers,
-    signal: controller.signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(detailUrl, {
+      headers: API_CONFIG.detail.headers,
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    const aborted = err?.name === 'AbortError' || err?.code === 20 || err?.message?.includes('aborted');
+    throw new Error(aborted ? `详情请求超时 (2s): ${apiSite.key}` : `详情请求失败: ${err.message}`);
+  }
 
   clearTimeout(timeoutId);
 
@@ -221,7 +236,14 @@ export async function getDetailFromApi(
     throw new Error(`详情请求失败: ${response.status}`);
   }
 
-  const data = await response.json();
+  // 安全解析：防止 5xx HTML 响应导致 JSON.parse 崩溃
+  let data: any;
+  try {
+    const text = await response.text();
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`详情响应非JSON (${apiSite.key}), 源站可能过载`);
+  }
 
   if (
     !data ||
@@ -293,12 +315,19 @@ async function handleSpecialSourceDetail(
   const detailUrl = `${apiSite.detail}/index.php/vod/detail/id/${id}.html`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-  const response = await fetch(detailUrl, {
-    headers: API_CONFIG.detail.headers,
-    signal: controller.signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(detailUrl, {
+      headers: API_CONFIG.detail.headers,
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    const aborted = err?.name === 'AbortError' || err?.code === 20 || err?.message?.includes('aborted');
+    throw new Error(aborted ? `特殊源详情超时 (2s): ${apiSite.key}` : `特殊源详情请求失败: ${err.message}`);
+  }
 
   clearTimeout(timeoutId);
 
