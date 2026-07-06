@@ -27,6 +27,9 @@ export async function GET(request: Request) {
       headers: {
         'User-Agent': ua,
       },
+      // CF edge 缓存 TS 分片 2 小时，避免每次请求都回源
+      // @ts-expect-error cf property is valid in Cloudflare Workers runtime
+      cf: { cacheTtl: 7200, cacheEverything: false },
     });
     if (!response.ok) {
       return NextResponse.json({ error: 'Failed to fetch segment' }, { status: 500 });

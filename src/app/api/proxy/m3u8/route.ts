@@ -142,7 +142,6 @@ export async function GET(request: Request) {
     const decodedUrl = decodeURIComponent(url);
 
     response = await fetch(decodedUrl, {
-      cache: 'no-cache',
       redirect: 'follow',
       credentials: 'same-origin',
       headers: {
@@ -178,8 +177,8 @@ export async function GET(request: Request) {
       headers.set('Access-Control-Allow-Origin', '*');
       headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       headers.set('Access-Control-Allow-Headers', 'Content-Type, Range, Origin, Accept');
-      // M3U8 缓存 8 秒，大幅减少源站请求
-      headers.set('Cache-Control', 'public, max-age=8, s-maxage=8');
+      // M3U8 缓存 5 分钟，大幅减少源站 M3U8 请求（播放器每 10s 刷新）
+      headers.set('Cache-Control', 'public, max-age=300, s-maxage=300');
       headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
       return new Response(modifiedContent, { headers });
     }
@@ -189,8 +188,8 @@ export async function GET(request: Request) {
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     headers.set('Access-Control-Allow-Headers', 'Content-Type, Range, Origin, Accept');
-    // M3U8 缓存 8 秒
-    headers.set('Cache-Control', 'public, max-age=8, s-maxage=8');
+    // M3U8 缓存 5 分钟（非 M3U8 内容，如直播流）
+    headers.set('Cache-Control', 'public, max-age=300, s-maxage=300');
     headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
 
     // 直接返回视频流
@@ -238,7 +237,8 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
     // 处理 TS 片段 URL 和其他媒体文件
     if (line && !line.startsWith('#')) {
       const resolvedUrl = resolveUrl(baseUrl, line);
-      const proxyUrl = allowCORS ? resolvedUrl : `${proxyBase}/segment?url=${encodeURIComponent(resolvedUrl)}`;
+      // TS 分片直连 CDN，不通过 CF 代理，彻底消除源站 IP 暴露
+      const proxyUrl = resolvedUrl;
       rewrittenLines.push(proxyUrl);
       continue;
     }
