@@ -9,6 +9,7 @@ export const runtime = 'edge';
 
 // 已知的广告域名（精确匹配，避免误杀正常 CDN）
 const AD_DOMAINS: string[] = [
+  // 欧美通用广告网络
   'doubleclick.net',
   'googlesyndication.com',
   'googleadservices.com',
@@ -17,6 +18,28 @@ const AD_DOMAINS: string[] = [
   'popads.net',
   'revive-adserver.net',
   'mediaad.org',
+  // 爱奇艺广告特征
+  'cupid.iqiyi.com',
+  'afp.iqiyi.com',
+  'ad.m.iqiyi.com',
+  'policy.video.iqiyi.com',
+  't7.cupid.iqiyi.com',
+  // 猫眼/美团广告特征
+  'ad.maoyan.com',
+  'analytics.maoyan.com',
+  's3plus.meituan.com',
+  'report.meituan.com',
+  'analytics.meituan.com',
+  'stat.mafengwo.cn',
+];
+
+// 已知死链/防盗链 CDN 节点（监控报告高频 4xx，跳过避免播放中断）
+const DEAD_CDN_DOMAINS: string[] = [
+  'vv.jisuzyv.com',
+  'vip.ffzy-plays.com',
+  'ukzy.ukubf3.com',
+  'v2.ppqrrs.com',
+  'v10.ppqrrs.com',
 ];
 
 /**
@@ -34,6 +57,24 @@ function isAdSegmentUrl(line: string): boolean {
     }
   } catch {
     // URL 解析失败，不认为是广告
+  }
+  return false;
+}
+
+/**
+ * 检测一行是否为死链/防盗链 CDN 节点（精确匹配，跳过避免播放中断）
+ */
+function isDeadCdnUrl(line: string): boolean {
+  try {
+    const url = new URL(line);
+    const hostname = url.hostname.toLowerCase();
+    for (const domain of DEAD_CDN_DOMAINS) {
+      if (hostname === domain || hostname.endsWith('.' + domain)) {
+        return true;
+      }
+    }
+  } catch {
+    // URL 解析失败，不认为是死链
   }
   return false;
 }
@@ -99,8 +140,8 @@ function filterAdsFromM3U8(content: string): string {
       continue;
     }
 
-    // 检测独立广告片段 URL
-    if (trimmed && !trimmed.startsWith('#') && isAdSegmentUrl(trimmed)) {
+    // 检测独立广告片段 URL 或死链 CDN 节点
+    if (trimmed && !trimmed.startsWith('#') && (isAdSegmentUrl(trimmed) || isDeadCdnUrl(trimmed))) {
       // 跳过前一行的 #EXTINF
       if (result.length > 0 && result[result.length - 1].trim().startsWith('#EXTINF')) {
         result.pop();
@@ -113,7 +154,7 @@ function filterAdsFromM3U8(content: string): string {
   }
 
   if (removedSegments > 0) {
-    console.log(`[AdBlock] 已移除 ${removedSegments} 个广告片段`);
+    console.log(`[AdBlock] 已移除 ${removedSegments} 个广告/死链片段`);
   }
 
   return result.join('\n');
