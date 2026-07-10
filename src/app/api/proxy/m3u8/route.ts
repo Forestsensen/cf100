@@ -42,6 +42,18 @@ const DEAD_CDN_DOMAINS: string[] = [
   'v10.ppqrrs.com',
 ];
 
+// 直连白名单：这些源的 TS/分片直连 CDN（国内直连快，省去 CF 中转、保白天高速）
+// 匹配方式 = 分片 URL 主机名包含以下关键字（覆盖其 API 与 CDN 域名）
+const DIRECT_HOST_KEYWORDS: string[] = [
+  'dytt',   // 电影天堂（caiji.dyttzyapi.com / vip.dytt-tvs.com）
+  'iqiyi',  // 爱奇艺（iqiyizyapi.com）
+  'yzzy',   // 爱奇艺 CDN（api.yzzy-api.com / cdn.yzzy31-play.com）
+];
+function isDirectHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return DIRECT_HOST_KEYWORDS.some((k) => h.includes(k));
+}
+
 /**
  * 检测一行是否为广告片段 URL（保守策略，只匹配确定的广告）
  */
@@ -278,8 +290,12 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
     // 处理 TS 片段 URL 和其他媒体文件
     if (line && !line.startsWith('#')) {
       const resolvedUrl = resolveUrl(baseUrl, line);
-      // TS 分片直连 CDN，不通过 CF 代理，彻底消除源站 IP 暴露
-      const proxyUrl = resolvedUrl;
+      let host = '';
+      try { host = new URL(resolvedUrl).hostname; } catch { /* ignore */ }
+      // 白名单内直连 CDN（国内直连快）；其余走 /segment 代理（CF 中继，解决直连慢）
+      const proxyUrl = isDirectHost(host)
+        ? resolvedUrl
+        : `${proxyBase}/segment?url=${encodeURIComponent(resolvedUrl)}`;
       rewrittenLines.push(proxyUrl);
       continue;
     }
@@ -303,7 +319,11 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
         const nextLine = lines[i].trim();
         if (nextLine && !nextLine.startsWith('#')) {
           const resolvedUrl = resolveUrl(baseUrl, nextLine);
-          const proxyUrl = `${proxyBase}/m3u8?url=${encodeURIComponent(resolvedUrl)}`;
+          let host = '';
+          try { host = new URL(resolvedUrl).hostname; } catch { /* ignore */ }
+          const proxyUrl = isDirectHost(host)
+            ? resolvedUrl
+            : `${proxyBase}/m3u8?url=${encodeURIComponent(resolvedUrl)}`;
           rewrittenLines.push(proxyUrl);
         } else {
           rewrittenLines.push(nextLine);
@@ -323,7 +343,11 @@ function rewriteMapUri(line: string, baseUrl: string, proxyBase: string) {
   if (uriMatch) {
     const originalUri = uriMatch[1];
     const resolvedUrl = resolveUrl(baseUrl, originalUri);
-    const proxyUrl = `${proxyBase}/segment?url=${encodeURIComponent(resolvedUrl)}`;
+    let host = '';
+    try { host = new URL(resolvedUrl).hostname; } catch { /* ignore */ }
+    const proxyUrl = isDirectHost(host)
+      ? resolvedUrl
+      : `${proxyBase}/segment?url=${encodeURIComponent(resolvedUrl)}`;
     return line.replace(uriMatch[0], `URI="${proxyUrl}"`);
   }
   return line;
@@ -334,7 +358,11 @@ function rewriteKeyUri(line: string, baseUrl: string, proxyBase: string) {
   if (uriMatch) {
     const originalUri = uriMatch[1];
     const resolvedUrl = resolveUrl(baseUrl, originalUri);
-    const proxyUrl = `${proxyBase}/key?url=${encodeURIComponent(resolvedUrl)}`;
+    let host = '';
+    try { host = new URL(resolvedUrl).hostname; } catch { /* ignore */ }
+    const proxyUrl = isDirectHost(host)
+      ? resolvedUrl
+      : `${proxyBase}/key?url=${encodeURIComponent(resolvedUrl)}`;
     return line.replace(uriMatch[0], `URI="${proxyUrl}"`);
   }
   return line;
