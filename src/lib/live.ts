@@ -346,3 +346,40 @@ export function getBaseUrl(m3u8Url: string) {
     return m3u8Url.endsWith('/') ? m3u8Url : m3u8Url + '/';
   }
 }
+
+/**
+ * 构造透传给上游源站的请求头。
+ * 防盗链(Referer/Origin)透传优先级：URL ?referer= > 请求头 Referer > 上游 URL 自身 origin
+ * 很多源站 CDN 校验 Referer 防盗链，不传会直接 403；透传可显著提升可用率。
+ */
+export function buildUpstreamHeaders(
+  request: Request,
+  upstreamUrl: string,
+  ua: string
+): Record<string, string> {
+  const headers: Record<string, string> = { 'User-Agent': ua };
+
+  const urlReferer = new URL(request.url).searchParams.get('referer');
+  const reqReferer = request.headers.get('referer');
+  let refererToSend: string | null = urlReferer || reqReferer;
+
+  // fallback：用上游 URL 自身 origin 作为 Referer（满足"同源引用"类防盗链）
+  if (!refererToSend) {
+    try {
+      refererToSend = new URL(upstreamUrl).origin + '/';
+    } catch {
+      refererToSend = null;
+    }
+  }
+
+  if (refererToSend) {
+    headers['Referer'] = refererToSend;
+    try {
+      headers['Origin'] = new URL(refererToSend).origin;
+    } catch {
+      // ignore
+    }
+  }
+
+  return headers;
+}

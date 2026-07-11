@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 
 import { getConfig } from "@/lib/config";
-import { getBaseUrl, resolveUrl } from "@/lib/live";
+import { buildUpstreamHeaders, getBaseUrl, resolveUrl } from "@/lib/live";
 
 export const runtime = 'edge';
 
@@ -194,13 +194,16 @@ export async function GET(request: Request) {
   try {
     const decodedUrl = decodeURIComponent(url);
 
+    const upstreamHeaders = buildUpstreamHeaders(request, decodedUrl, ua);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     response = await fetch(decodedUrl, {
       redirect: 'follow',
       credentials: 'same-origin',
-      headers: {
-        'User-Agent': ua,
-      },
+      headers: upstreamHeaders,
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       return NextResponse.json({ error: 'Failed to fetch m3u8' }, { status: 500 });

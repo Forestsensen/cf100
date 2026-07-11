@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 
 import { getConfig } from "@/lib/config";
+import { buildUpstreamHeaders } from "@/lib/live";
 
 export const runtime = 'edge';
 
@@ -45,15 +46,19 @@ export async function GET(request: Request) {
     }
   }
 
-  // 回源（透传客户端 Range，支持播放器 seek）
-  const upstreamHeaders: Record<string, string> = { 'User-Agent': ua };
+  // 回源（透传客户端 Range + 上游防盗链头，支持播放器 seek）
+  const upstreamHeaders = buildUpstreamHeaders(request, decodedUrl, ua);
   if (clientRange) upstreamHeaders['Range'] = clientRange;
 
   let upstream: Response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
   try {
-    upstream = await fetch(decodedUrl, { headers: upstreamHeaders });
+    upstream = await fetch(decodedUrl, { headers: upstreamHeaders, signal: controller.signal });
   } catch {
     return NextResponse.json({ error: 'Failed to fetch segment' }, { status: 500 });
+  } finally {
+    clearTimeout(timeoutId);
   }
   if (!upstream.ok && upstream.status !== 206) {
     return NextResponse.json({ error: 'Failed to fetch segment' }, { status: 500 });

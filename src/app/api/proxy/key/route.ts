@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 
 import { getConfig } from "@/lib/config";
+import { buildUpstreamHeaders } from "@/lib/live";
 
 export const runtime = 'edge';
 
@@ -39,9 +40,7 @@ export async function GET(request: Request) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     const response = await fetch(decodedUrl, {
-      headers: {
-        'User-Agent': ua,
-      },
+      headers: buildUpstreamHeaders(request, decodedUrl, ua),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);

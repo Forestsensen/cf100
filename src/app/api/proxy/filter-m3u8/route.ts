@@ -81,6 +81,8 @@ export async function GET(request: Request) {
   try {
     const decodedUrl = decodeURIComponent(url);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     response = await fetch(decodedUrl, {
       redirect: 'follow',
       // @ts-expect-error cf property is valid in Cloudflare Workers runtime
@@ -88,7 +90,9 @@ export async function GET(request: Request) {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       return NextResponse.json(

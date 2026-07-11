@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
+import { buildUpstreamHeaders } from '@/lib/live';
 
 export const runtime = 'edge';
 
@@ -21,13 +22,16 @@ export async function GET(request: Request) {
 
   try {
     const decodedUrl = decodeURIComponent(imageUrl);
+    const upstreamHeaders = buildUpstreamHeaders(request, decodedUrl, ua);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     const imageResponse = await fetch(decodedUrl, {
       redirect: 'follow',
       credentials: 'same-origin',
-      headers: {
-        'User-Agent': ua,
-      },
+      headers: upstreamHeaders,
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (!imageResponse.ok) {
       return NextResponse.json(
