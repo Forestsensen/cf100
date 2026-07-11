@@ -269,20 +269,30 @@ export async function GET(request: Request) {
 }
 
 function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allowCORS: boolean) {
-  // 从 referer 头提取协议信息
-  const referer = req.headers.get('referer');
-  let protocol = 'http';
-  if (referer) {
-    try {
-      const refererUrl = new URL(referer);
-      protocol = refererUrl.protocol.replace(':', '');
-    } catch (error) {
-      // ignore
+  // 反代兼容：优先 X-Forwarded-Proto + X-Forwarded-Host，回退 referer/host
+  const forwardedProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
+
+  let protocol: string;
+  let host: string;
+  if (forwardedProto && forwardedHost) {
+    protocol = forwardedProto;
+    host = forwardedHost;
+  } else {
+    const referer = req.headers.get('referer');
+    protocol = 'http';
+    if (referer) {
+      try {
+        protocol = new URL(referer).protocol.replace(':', '');
+      } catch (error) {
+        // ignore
+      }
     }
+    host = req.headers.get('host') || '';
   }
 
-  const host = req.headers.get('host');
   const proxyBase = `${protocol}://${host}/api/proxy`;
+  const variables = new Map<string, string>(); // EXT-X-DEFINE 变量替换
 
   const lines = content.split('\n');
   const rewrittenLines: string[] = [];
@@ -292,7 +302,8 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
 
     // 处理 TS 片段 URL 和其他媒体文件
     if (line && !line.startsWith('#')) {
-      const resolvedUrl = resolveUrl(baseUrl, line);
+      let resolvedUrl = resolveUrl(baseUrl, line);
+      if (variables.size) resolvedUrl = substituteVariables(resolvedUrl, variables);
       let host = '';
       try { host = new URL(resolvedUrl).hostname; } catch { /* ignore */ }
       // 白名单内直连 CDN（国内直连快）；其余走 /segment 代理（CF 中继，解决直连慢）
@@ -303,14 +314,44 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
       continue;
     }
 
+    // 处理变量定义 (EXT-X-DEFINE)
+    if (line.startsWith('#EXT-X-DEFINE:')) {
+      line = processDefineVariables(line, variables);
+    }
+
     // 处理 EXT-X-MAP 标签中的 URI
     if (line.startsWith('#EXT-X-MAP:')) {
-      line = rewriteMapUri(line, baseUrl, proxyBase);
+      line = rewriteUri(line, baseUrl, proxyBase, variables, 'segment');
     }
 
     // 处理 EXT-X-KEY 标签中的 URI
     if (line.startsWith('#EXT-X-KEY:')) {
-      line = rewriteKeyUri(line, baseUrl, proxyBase);
+      line = rewriteUri(line, baseUrl, proxyBase, variables, 'key');
+    }
+
+    // 处理 EXT-X-MEDIA 标签中的 URI (音轨/字幕轨)
+    if (line.startsWith('#EXT-X-MEDIA:')) {
+      line = rewriteUri(line, baseUrl, proxyBase, variables, 'm3u8');
+    }
+
+    // 处理 LL-HLS 部分片段 (EXT-X-PART)
+    if (line.startsWith('#EXT-X-PART:')) {
+      line = rewriteUri(line, baseUrl, proxyBase, variables, 'segment');
+    }
+
+    // 处理内容导向 (EXT-X-CONTENT-STEERING)
+    if (line.startsWith('#EXT-X-CONTENT-STEERING:')) {
+      line = rewriteUri(line, baseUrl, proxyBase, variables, 'm3u8', 'SERVER-URI');
+    }
+
+    // 处理会话数据 (EXT-X-SESSION-DATA)
+    if (line.startsWith('#EXT-X-SESSION-DATA:')) {
+      line = rewriteUri(line, baseUrl, proxyBase, variables, 'segment');
+    }
+
+    // 处理会话密钥 (EXT-X-SESSION-KEY)
+    if (line.startsWith('#EXT-X-SESSION-KEY:')) {
+      line = rewriteUri(line, baseUrl, proxyBase, variables, 'key');
     }
 
     // 处理嵌套的 M3U8 文件 (EXT-X-STREAM-INF)
@@ -321,7 +362,8 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
         i++;
         const nextLine = lines[i].trim();
         if (nextLine && !nextLine.startsWith('#')) {
-          const resolvedUrl = resolveUrl(baseUrl, nextLine);
+          let resolvedUrl = resolveUrl(baseUrl, nextLine);
+          if (variables.size) resolvedUrl = substituteVariables(resolvedUrl, variables);
           let host = '';
           try { host = new URL(resolvedUrl).hostname; } catch { /* ignore */ }
           const proxyUrl = isDirectHost(host)
@@ -335,38 +377,103 @@ function rewriteM3U8Content(content: string, baseUrl: string, req: Request, allo
       continue;
     }
 
+    // 处理日期范围标签中的 URI (EXT-X-DATERANGE)
+    if (line.startsWith('#EXT-X-DATERANGE:')) {
+      line = rewriteDateRangeUri(line, baseUrl, proxyBase, variables);
+    }
+
+    // 处理预加载提示 (EXT-X-PRELOAD-HINT)
+    if (line.startsWith('#EXT-X-PRELOAD-HINT:')) {
+      line = rewriteUri(line, baseUrl, proxyBase, variables, 'segment');
+    }
+
+    // 处理渲染报告 (EXT-X-RENDITION-REPORT)
+    if (line.startsWith('#EXT-X-RENDITION-REPORT:')) {
+      line = rewriteUri(line, baseUrl, proxyBase, variables, 'm3u8');
+    }
+
     rewrittenLines.push(line);
   }
 
   return rewrittenLines.join('\n');
 }
 
-function rewriteMapUri(line: string, baseUrl: string, proxyBase: string) {
-  const uriMatch = line.match(/URI="([^"]+)"/);
-  if (uriMatch) {
-    const originalUri = uriMatch[1];
-    const resolvedUrl = resolveUrl(baseUrl, originalUri);
-    let host = '';
-    try { host = new URL(resolvedUrl).hostname; } catch { /* ignore */ }
-    const proxyUrl = isDirectHost(host)
-      ? resolvedUrl
-      : `${proxyBase}/segment?url=${encodeURIComponent(resolvedUrl)}`;
-    return line.replace(uriMatch[0], `URI="${proxyUrl}"`);
+const VARIABLE_REPLACEMENT_REGEX = /\{\$([a-zA-Z0-9-_]+)\}/g;
+
+function substituteVariables(text: string, variables: Map<string, string>): string {
+  if (variables.size === 0) return text;
+  return text.replace(VARIABLE_REPLACEMENT_REGEX, (variableReference: string, variableName: string) => {
+    const variableValue = variables.get(variableName);
+    if (variableValue === undefined) return variableReference;
+    return variableValue;
+  });
+}
+
+function processDefineVariables(line: string, variables: Map<string, string>): string {
+  const nameMatch = line.match(/NAME="([^"]+)"/);
+  const valueMatch = line.match(/VALUE="([^"]+)"/);
+  if (nameMatch && valueMatch) {
+    variables.set(nameMatch[1], valueMatch[1]);
   }
   return line;
 }
 
-function rewriteKeyUri(line: string, baseUrl: string, proxyBase: string) {
-  const uriMatch = line.match(/URI="([^"]+)"/);
-  if (uriMatch) {
-    const originalUri = uriMatch[1];
+/**
+ * 通用 URI 重写：解析相对路径 → 直连或代理。
+ * endpoint: segment(分片) / key(密钥) / m3u8(播放列表)
+ */
+function rewriteUri(
+  line: string,
+  baseUrl: string,
+  proxyBase: string,
+  variables: Map<string, string>,
+  endpoint: 'segment' | 'key' | 'm3u8',
+  attrName: string = 'URI'
+): string {
+  const attrMatch = line.match(new RegExp(`${attrName}="([^"]+)"`));
+  if (!attrMatch) return line;
+
+  let originalUri = attrMatch[1];
+  if (variables.size) originalUri = substituteVariables(originalUri, variables);
+
+  // 无效 URI 清洗（nan 等）→ 移除该属性让播放器忽略此轨道，避免断链
+  if (!originalUri || originalUri === 'nan' || originalUri.includes('nan')) {
+    return line.replace(new RegExp(`,?\\s*${attrName}="[^"]*"`), '');
+  }
+
+  try {
     const resolvedUrl = resolveUrl(baseUrl, originalUri);
     let host = '';
     try { host = new URL(resolvedUrl).hostname; } catch { /* ignore */ }
     const proxyUrl = isDirectHost(host)
       ? resolvedUrl
-      : `${proxyBase}/key?url=${encodeURIComponent(resolvedUrl)}`;
-    return line.replace(uriMatch[0], `URI="${proxyUrl}"`);
+      : `${proxyBase}/${endpoint}?url=${encodeURIComponent(resolvedUrl)}`;
+    return line.replace(attrMatch[0], `${attrName}="${proxyUrl}"`);
+  } catch {
+    // 解析失败 → 移除 URI 属性，避免断链
+    return line.replace(new RegExp(`,?\\s*${attrName}="[^"]*"`), '');
   }
-  return line;
+}
+
+function rewriteDateRangeUri(line: string, baseUrl: string, proxyBase: string, variables: Map<string, string>): string {
+  const uriMatches = Array.from(line.matchAll(/([A-Z][A-Z-]*)="([^"]*(?:https?:\/\/|\/)[^"]*)"/g));
+  let result = line;
+  for (const match of uriMatches) {
+    const fullMatch = match[0];
+    const originalUri = match[2];
+    let uri = originalUri;
+    if (variables.size) uri = substituteVariables(uri, variables);
+    try {
+      const resolvedUrl = resolveUrl(baseUrl, uri);
+      let host = '';
+      try { host = new URL(resolvedUrl).hostname; } catch { /* ignore */ }
+      const proxyUrl = isDirectHost(host)
+        ? resolvedUrl
+        : `${proxyBase}/segment?url=${encodeURIComponent(resolvedUrl)}`;
+      result = result.replace(fullMatch, fullMatch.replace(originalUri, proxyUrl));
+    } catch {
+      // 保持原始 URI
+    }
+  }
+  return result;
 }

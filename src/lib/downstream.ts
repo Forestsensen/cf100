@@ -29,7 +29,7 @@ async function searchWithCache(
   timeoutMs = 2000
 ): Promise<{ results: SearchResult[]; pageCount?: number }> {
   // 先查缓存
-  const cached = getCachedSearchPage(apiSite.key, query, page);
+  const cached = await getCachedSearchPage(apiSite.key, query, page);
   if (cached) {
     if (cached.status === 'ok') {
       return { results: cached.data, pageCount: cached.pageCount };
@@ -52,7 +52,7 @@ async function searchWithCache(
 
     if (!response.ok) {
       if (response.status === 403) {
-        setCachedSearchPage(apiSite.key, query, page, 'forbidden', []);
+        await setCachedSearchPage(apiSite.key, query, page, 'forbidden', []);
       }
       return { results: [] };
     }
@@ -130,14 +130,14 @@ async function searchWithCache(
 
     const pageCount = page === 1 ? data.pagecount || 1 : undefined;
     // 写入缓存（成功）
-    setCachedSearchPage(apiSite.key, query, page, 'ok', results, pageCount);
+    await setCachedSearchPage(apiSite.key, query, page, 'ok', results, pageCount);
     return { results, pageCount };
   } catch (error: any) {
     clearTimeout(timeoutId);
     // 识别被 AbortController 中止（超时）
     const aborted = error?.name === 'AbortError' || error?.code === 20 || error?.message?.includes('aborted');
     if (aborted) {
-      setCachedSearchPage(apiSite.key, query, page, 'timeout', []);
+      await setCachedSearchPage(apiSite.key, query, page, 'timeout', []);
     }
     return { results: [] };
   }
