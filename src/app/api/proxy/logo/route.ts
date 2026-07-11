@@ -22,7 +22,6 @@ export async function GET(request: Request) {
   try {
     const decodedUrl = decodeURIComponent(imageUrl);
     const imageResponse = await fetch(decodedUrl, {
-      cache: 'no-cache',
       redirect: 'follow',
       credentials: 'same-origin',
       headers: {

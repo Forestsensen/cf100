@@ -82,8 +82,9 @@ export async function GET(request: Request) {
     const decodedUrl = decodeURIComponent(url);
 
     response = await fetch(decodedUrl, {
-      cache: 'no-cache',
       redirect: 'follow',
+      // @ts-expect-error cf property is valid in Cloudflare Workers runtime
+      cf: { cacheTtl: 300 },
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
@@ -110,7 +111,7 @@ export async function GET(request: Request) {
       headers.set('Access-Control-Allow-Origin', '*');
       headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
       headers.set('Access-Control-Allow-Headers', 'Content-Type, Range, Origin, Accept');
-      headers.set('Cache-Control', 'no-cache');
+      headers.set('Cache-Control', 'public, max-age=300');
 
       return new Response(filteredContent, { status: 200, headers });
     }
