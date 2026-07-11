@@ -29,7 +29,8 @@ export async function GET(request: Request) {
   }
 
   // 边缘缓存：key 极少变化，命中则零回源
-  const cache = caches.default;
+  // @ts-expect-error caches.default is valid in Cloudflare Workers runtime
+  const cache = (caches as { default: Cache }).default;
   const cacheKey = new Request(request.url);
   const cached = await cache.match(cacheKey);
   if (cached) {
