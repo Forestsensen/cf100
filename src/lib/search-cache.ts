@@ -41,7 +41,7 @@ export async function getCachedSearchPage(
     const entry = (await cached.json()) as CachedPageEntry;
     // 手动校验过期（Cache API match 不自动判新鲜度）
     if (entry.expiresAt <= Date.now()) {
-      await cache.delete(key).catch(() => {});
+      await cache.delete(key).catch(() => { /* ignore delete failure */ });
       return null;
     }
     return entry;
