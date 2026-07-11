@@ -428,7 +428,7 @@ function rewriteUri(
   proxyBase: string,
   variables: Map<string, string>,
   endpoint: 'segment' | 'key' | 'm3u8',
-  attrName: string = 'URI'
+  attrName = 'URI'
 ): string {
   const attrMatch = line.match(new RegExp(`${attrName}="([^"]+)"`));
   if (!attrMatch) return line;

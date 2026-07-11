@@ -97,7 +97,7 @@ export async function GET(request: Request) {
     });
     cacheable.headers.set('X-Cached-At', String(Date.now()));
     cacheable.headers.delete('Set-Cookie');
-    await cache.put(cacheKey, cacheable).catch(() => {});
+    await cache.put(cacheKey, cacheable).catch(() => { /* ignore cache write failure */ });
   }
 
   return new Response(upstream.body, { status: upstream.status, headers });
