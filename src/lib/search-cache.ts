@@ -33,7 +33,8 @@ export async function getCachedSearchPage(
   page: number
 ): Promise<CachedPageEntry | null> {
   try {
-    const cache = caches.default;
+    // @ts-expect-error caches.default is valid in Cloudflare Workers runtime
+    const cache = (caches as { default: Cache }).default;
     const key = makeSearchCacheKey(sourceKey, query, page);
     const cached = await cache.match(key);
     if (!cached) return null;
@@ -63,7 +64,8 @@ export async function setCachedSearchPage(
   pageCount?: number
 ): Promise<void> {
   try {
-    const cache = caches.default;
+    // @ts-expect-error caches.default is valid in Cloudflare Workers runtime
+    const cache = (caches as { default: Cache }).default;
     const key = makeSearchCacheKey(sourceKey, query, page);
     const entry: CachedPageEntry = {
       expiresAt: Date.now() + SEARCH_CACHE_TTL_MS,
