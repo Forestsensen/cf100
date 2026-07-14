@@ -106,16 +106,30 @@ export function useWatchingUpdates() {
 
       if (latestEpisodes === 0) return null;
 
-      // 获取原始集数
-      const originalEpisodes = record.original_episodes || record.total_episodes;
+      // 获取原始集数（追番基线）
+      let originalEpisodes = record.original_episodes || record.total_episodes;
+
+      // O12: 数据写坏时 original_episodes 可能大于 total_episodes，
+      // 会导致永远判定为「无更新」而卡死，纠正为 total_episodes
+      if (record.total_episodes && originalEpisodes > record.total_episodes) {
+        originalEpisodes = record.total_episodes;
+      }
+
+      // O11: 源站/CDN 偶发返回更少集数时，取三者最大值作为有效最新集数，
+      // 避免误判「无更新」或卡片数字跳变
+      const effectiveLatest = Math.max(
+        latestEpisodes,
+        originalEpisodes,
+        record.total_episodes || 0
+      );
 
       // 调试日志
-      console.log(`[追番更新] ${record.title}: API=${latestEpisodes}, 原始=${originalEpisodes}, 播放记录=${record.total_episodes}`);
+      console.log(`[追番更新] ${record.title}: API=${latestEpisodes}, 有效=${effectiveLatest}, 原始=${originalEpisodes}, 播放记录=${record.total_episodes}`);
 
       // 检查是否有新集数
-      if (latestEpisodes > originalEpisodes) {
-        const newEpisodes = latestEpisodes - originalEpisodes;
-        console.log(`[追番更新] ✨ ${record.title} 有新集: ${originalEpisodes} -> ${latestEpisodes} (+${newEpisodes})`);
+      if (effectiveLatest > originalEpisodes) {
+        const newEpisodes = effectiveLatest - originalEpisodes;
+        console.log(`[追番更新] ✨ ${record.title} 有新集: ${originalEpisodes} -> ${effectiveLatest} (+${newEpisodes})`);
         return {
           title: record.title,
           source_name: record.source_name,
@@ -124,9 +138,9 @@ export function useWatchingUpdates() {
           sourceKey: sourceName,
           videoId,
           currentEpisode: record.index,
-          totalEpisodes: latestEpisodes,
+          totalEpisodes: effectiveLatest,
           originalEpisodes,
-          latestEpisodes,
+          latestEpisodes: effectiveLatest,
           newEpisodes,
         };
       }
@@ -191,6 +205,9 @@ export function useWatchingUpdates() {
         );
         results.push(...batchResults.filter(Boolean) as WatchingUpdate['updatedSeries']);
       }
+
+      // O13: 按标题稳定排序，避免并发检测完成顺序不定导致卡片重排闪烁
+      results.sort((a, b) => a.title.localeCompare(b.title, 'zh'));
 
       const result: WatchingUpdate = {
         hasUpdates: results.length > 0,
