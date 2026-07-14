@@ -207,16 +207,17 @@ const M3U8_PATTERN = /(https?:\/\/[^"'\s]+?\.m3u8)/g;
 
 export async function getDetailFromApi(
   apiSite: ApiSite,
-  id: string
+  id: string,
+  timeoutMs = 2000
 ): Promise<SearchResult> {
   if (apiSite.detail) {
-    return handleSpecialSourceDetail(id, apiSite);
+    return handleSpecialSourceDetail(id, apiSite, timeoutMs);
   }
 
   const detailUrl = `${apiSite.api}${API_CONFIG.detail.path}${id}`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 2000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
@@ -257,6 +258,14 @@ export async function getDetailFromApi(
   const videoDetail = data.list[0];
   let episodes: string[] = [];
   let titles: string[] = [];
+
+  // 源站真实总集数（vod_total），优先于解析出的 episodes.length（O4）
+  let totalEpisodes = 0;
+  const vtRaw = (videoDetail as any).vod_total;
+  const vtNum = typeof vtRaw === 'number' ? vtRaw : parseInt(vtRaw as string, 10);
+  if (!isNaN(vtNum) && vtNum > 0) {
+    totalEpisodes = vtNum;
+  }
 
   // 处理播放源拆分
   if (videoDetail.vod_play_url) {
@@ -305,17 +314,19 @@ export async function getDetailFromApi(
     desc: cleanHtmlTags(videoDetail.vod_content),
     type_name: videoDetail.type_name,
     douban_id: videoDetail.vod_douban_id,
+    totalEpisodes,
   };
 }
 
 async function handleSpecialSourceDetail(
   id: string,
-  apiSite: ApiSite
+  apiSite: ApiSite,
+  timeoutMs = 2000
 ): Promise<SearchResult> {
   const detailUrl = `${apiSite.detail}/index.php/vod/detail/id/${id}.html`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 2000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
@@ -392,5 +403,6 @@ async function handleSpecialSourceDetail(
     desc: descText,
     type_name: '',
     douban_id: 0,
+    totalEpisodes: 0,
   };
 }

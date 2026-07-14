@@ -35,7 +35,8 @@ export interface PlayRecord {
   year: string;
   cover: string;
   index: number; // 第几集
-  total_episodes: number; // 总集数
+  total_episodes: number; // 总集数（可能被 Cron 更新为最新值）
+  original_episodes?: number; // 原始集数（首次观看时冻结的基线，用于检测新集数）
   play_time: number; // 播放进度（秒）
   total_time: number; // 总进度（秒）
   save_time: number; // 记录保存时间（时间戳）
@@ -572,6 +573,31 @@ export async function savePlayRecord(
   record: PlayRecord
 ): Promise<void> {
   const key = generateStorageKey(source, id);
+
+  // ---- original_episodes 基线维护（对齐 ergTV-main）----
+  // 1) 确保 original_episodes 有值：优先级 传入值 > 现有记录值 > 当前 total_episodes
+  // 2) 用户观看超过基线集数后推进基线，避免“更新提醒”卡死
+  const existingRecords = cacheManager.getCachedPlayRecords() || {};
+  const existingRecord = existingRecords[key];
+
+  if (!record.original_episodes || record.original_episodes <= 0) {
+    record.original_episodes =
+      existingRecord?.original_episodes && existingRecord.original_episodes > 0
+        ? existingRecord.original_episodes
+        : record.total_episodes;
+  }
+
+  if (existingRecord?.original_episodes && existingRecord.original_episodes > 0) {
+    const baseline = existingRecord.original_episodes;
+    const watchedBeyond = record.index > baseline;
+    const significant = record.play_time > 60; // 观看超过1分钟才算实质性进展
+    if (watchedBeyond && significant) {
+      const latest = Math.max(record.total_episodes, baseline);
+      record.original_episodes = latest;
+      record.total_episodes = latest;
+    }
+  }
+  // --------------------------------------------------
 
   // 数据库存储模式：乐观更新策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {

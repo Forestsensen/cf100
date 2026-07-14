@@ -10,20 +10,49 @@ import { SearchResult } from '@/lib/types';
 
 export const runtime = 'edge';
 
-// 诊断日志收集
+// 诊断日志收集（O8：最多保留最近 50 条，且只在 ?debug=1 时随响应返回）
 const cronLogs: string[] = [];
 function cronLog(msg: string) {
   const ts = new Date().toISOString();
   const line = `[${ts}] ${msg}`;
   console.log(line);
   cronLogs.push(line);
+  if (cronLogs.length > 50) cronLogs.splice(0, cronLogs.length - 50);
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// O3：可选的 KV 记录「最近检查时间」，替代集数未变时每轮落库写操作。
+// 绑定名为 CRON_STATE 的 KV 命名空间后自动启用；未绑定时回退主表 save_time 逻辑，行为不变。
+declare const CRON_STATE: any;
+const cronKV = typeof CRON_STATE !== 'undefined' ? CRON_STATE : null;
+
+async function markChecked(user: string, source: string, id: string) {
+  if (!cronKV) return;
+  try {
+    await cronKV.put(`chk:${user}:${source}:${id}`, String(Date.now()), {
+      expirationTtl: 60 * 60 * 24, // 自动过期，避免无限增长
+    });
+  } catch {
+    /* ignore */
+  }
+}
+async function getLastChecked(user: string, source: string, id: string): Promise<number> {
+  if (!cronKV) return 0;
+  try {
+    const v = await cronKV.get(`chk:${user}:${source}:${id}`);
+    return v ? Number(v) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
   cronLogs.length = 0;
   const url = new URL(request.url);
   const action = url.searchParams.get('action');
   const targetUser = url.searchParams.get('user');
+  const debug = url.searchParams.get('debug') === '1';
 
   // ?action=users — 轻量查询，只返回用户列表（给 cron-worker 用）
   if (action === 'users') {
@@ -45,21 +74,39 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // O2：?action=refresh 仅刷新配置+直播源（替代原 Worker 的 base call 全量处理）
+  if (action === 'refresh') {
+    try {
+      await refreshConfig();
+      await refreshAllLiveChannels();
+      lastRefreshTs = Date.now();
+      return NextResponse.json({ success: true, configDone: true, liveDone: true });
+    } catch (error) {
+      return NextResponse.json(
+        { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
+        { status: 500 }
+      );
+    }
+  }
+
   cronLog(
     `Cron job triggered: ${request.url}${
       targetUser ? ` (user=${targetUser})` : ''
-    }`
+    }${url.searchParams.get('skipRefresh') === '1' ? ' [skipRefresh]' : ''}`
   );
 
   try {
-    const result = await cronJobWithReport(targetUser || undefined);
+    const result = await cronJobWithReport(
+      targetUser || undefined,
+      url.searchParams.get('skipRefresh') === '1'
+    );
 
     return NextResponse.json({
       success: true,
       message: 'Cron job executed successfully',
       timestamp: new Date().toISOString(),
       ...result,
-      logs: cronLogs,
+      ...(debug ? { logs: cronLogs } : {}),
     });
   } catch (error) {
     console.error('Cron job failed:', error);
@@ -70,7 +117,7 @@ export async function GET(request: NextRequest) {
         message: 'Cron job failed',
         error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString(),
-        logs: cronLogs,
+        ...(debug ? { logs: cronLogs } : {}),
       },
       { status: 500 }
     );
@@ -86,6 +133,15 @@ const SKIP_WITHIN_6H = 6 * 60 * 60 * 1000;
 
 // 源站连续失败次数阈值，超过后跳过该源站剩余记录
 const SOURCE_FAIL_THRESHOLD = 3;
+
+// O2：config/live 刷新去抖窗口（10 分钟），避免 Worker 多次调用时反复刷新
+const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
+
+// O5：cron 抓取详情超时（后台任务，放宽到 8s；前端调用走默认 2s）
+const CRON_DETAIL_TIMEOUT = 8000;
+
+// O2：上次 config/live 刷新时间戳（模块级，热实例内生效）
+let lastRefreshTs = 0;
 
 // 并发限制工具
 async function runWithConcurrency<T>(
@@ -106,16 +162,32 @@ async function runWithConcurrency<T>(
   return results;
 }
 
-async function cronJobWithReport(targetUser?: string) {
+async function cronJobWithReport(targetUser?: string, skipRefresh = false) {
   const report: Record<string, unknown> = {};
 
-  // 1. 刷新配置
-  await refreshConfig();
-  report.configDone = true;
-
-  // 2. 刷新直播源
-  await refreshAllLiveChannels();
-  report.liveDone = true;
+  // 1~2. 刷新配置 + 直播源（O2 去抖）
+  if (skipRefresh) {
+    cronLog('skipRefresh=1，跳过配置/直播源刷新');
+    report.configDone = 'skipped';
+    report.liveDone = 'skipped';
+  } else {
+    const now = Date.now();
+    if (now - lastRefreshTs < REFRESH_COOLDOWN_MS) {
+      cronLog(
+        `配置/直播源 ${Math.round(
+          (REFRESH_COOLDOWN_MS - (now - lastRefreshTs)) / 1000
+        )}s 内已刷新，跳过(O2去抖)`
+      );
+      report.configDone = 'debounced';
+      report.liveDone = 'debounced';
+    } else {
+      await refreshConfig();
+      await refreshAllLiveChannels();
+      lastRefreshTs = now;
+      report.configDone = true;
+      report.liveDone = true;
+    }
+  }
 
   // 3. 刷新播放记录/收藏
   const detailCache = new Map<string, SearchResult | null>();
@@ -131,7 +203,7 @@ async function cronJobWithReport(targetUser?: string) {
     apiSiteMap.set(site.key, site);
   }
 
-  // 获取详情（直接调用 getDetailFromApi，1 subrequest）
+  // 获取详情（直接调用 getDetailFromApi，1 subrequest，cron 超时 8s）
   const getDetail = async (
     source: string,
     id: string
@@ -159,10 +231,11 @@ async function cronJobWithReport(targetUser?: string) {
 
     try {
       subrequestCount++;
-      const detail = await getDetailFromApi(apiSite, id);
+      const detail = await getDetailFromApi(apiSite, id, CRON_DETAIL_TIMEOUT);
       detailCache.set(key, detail);
-      // 成功则重置该源站失败计数
-      failedSources.delete(source);
+      // O9：成功时失败计数 -1（衰减而非清零），并发下阈值更稳定
+      const fc = failedSources.get(source) || 0;
+      if (fc > 0) failedSources.set(source, fc - 1);
       return detail;
     } catch (err: any) {
       // 记录源站失败次数
@@ -170,7 +243,7 @@ async function cronJobWithReport(targetUser?: string) {
       failedSources.set(source, newFailCount);
       if (newFailCount >= SOURCE_FAIL_THRESHOLD) {
         cronLog(
-          `⚠ 源站 ${source} 连续失败 ${newFailCount} 次，跳过该源站剩余记录`
+          `⚠ 源站 ${source} 失败 ${newFailCount} 次，跳过该源站剩余记录`
         );
       } else {
         cronLog(
@@ -230,9 +303,11 @@ async function cronJobWithReport(targetUser?: string) {
             const [source, id] = key.split('+');
             if (!source || !id) return;
 
-            // 跳过 6h 内已检查/更新的记录（但如果缺少 original_episodes 则不跳过）
-            const now = Date.now();
-            if (record.save_time && now - record.save_time < SKIP_WITHIN_6H && record.original_episodes) {
+            // O3：跳过近期已检查（优先 KV，否则回退主表 save_time）
+            const lastCheck = cronKV
+              ? await getLastChecked(user, source, id)
+              : (record.save_time || 0);
+            if (lastCheck && Date.now() - lastCheck < SKIP_WITHIN_6H && record.original_episodes) {
               totalSkippedRecent++;
               return;
             }
@@ -243,10 +318,29 @@ async function cronJobWithReport(targetUser?: string) {
               return;
             }
 
-            const episodeCount = detail.episodes?.length || 0;
+            // O4：优先用源站真实总集数 vod_total，否则回退 episodes.length
+            const episodeCount =
+              detail.totalEpisodes && detail.totalEpisodes > 0
+                ? detail.totalEpisodes
+                : (detail.episodes?.length || 0);
+
             if (episodeCount > 0 && episodeCount !== record.total_episodes) {
-              // 保留原始集数（如果存在），否则使用当前集数
               const originalEpisodes = record.original_episodes || record.total_episodes;
+
+              // O6：集数异常减少（>30%）疑似源站故障，不覆盖，仅标记已检查
+              if (
+                originalEpisodes > 0 &&
+                episodeCount < originalEpisodes &&
+                (originalEpisodes - episodeCount) / originalEpisodes > 0.3
+              ) {
+                cronLog(
+                  `⚠ 集数异常减少，疑似源站故障，跳过: ${record.title} (${record.total_episodes} -> ${episodeCount}, 原始: ${originalEpisodes})`
+                );
+                await markChecked(user, source, id);
+                totalSkipped++;
+                return;
+              }
+
               await db.savePlayRecord(user, source, id, {
                 title: detail.title || record.title,
                 source_name: record.source_name,
@@ -265,19 +359,19 @@ async function cronJobWithReport(targetUser?: string) {
               );
               totalUpdated++;
             } else {
-              // 集数未变化，也更新 save_time 标记为"已检查"
-              // 如果缺少 original_episodes，补充设置
+              // 集数未变：O3 用 KV 记录检查时间（不写主表）；无 KV 时才回退写 save_time
+              await markChecked(user, source, id);
               if (!record.original_episodes) {
                 await db.savePlayRecord(user, source, id, {
                   ...record,
                   original_episodes: record.total_episodes,
-                  save_time: now,
+                  save_time: Date.now(),
                 });
                 cronLog(`✓ 补充原始集数: ${record.title} = ${record.total_episodes}`);
-              } else if (record.save_time !== now) {
+              } else if (!cronKV && record.save_time !== Date.now()) {
                 await db.savePlayRecord(user, source, id, {
                   ...record,
-                  save_time: now,
+                  save_time: Date.now(),
                 });
               }
               totalSkipped++;
@@ -315,9 +409,11 @@ async function cronJobWithReport(targetUser?: string) {
               const [source, id] = key.split('+');
               if (!source || !id) return;
 
-              // 跳过 24h 内已检查/更新的收藏
-              const now = Date.now();
-              if ((fav as any).save_time && now - (fav as any).save_time < SKIP_WITHIN_6H) {
+              // O3：跳过近期已检查
+              const lastCheck = cronKV
+                ? await getLastChecked(user, source, id)
+                : ((fav as any).save_time || 0);
+              if (lastCheck && Date.now() - lastCheck < SKIP_WITHIN_6H) {
                 totalSkippedRecent++;
                 return;
               }
@@ -328,17 +424,40 @@ async function cronJobWithReport(targetUser?: string) {
                 return;
               }
 
-              const favEpisodeCount = favDetail.episodes?.length || 0;
+              // O4：优先 vod_total
+              const favEpisodeCount =
+                favDetail.totalEpisodes && favDetail.totalEpisodes > 0
+                  ? favDetail.totalEpisodes
+                  : (favDetail.episodes?.length || 0);
+
               if (
                 favEpisodeCount > 0 &&
                 favEpisodeCount !== (fav as any).total_episodes
               ) {
+                const originalEpisodes =
+                  (fav as any).original_episodes || (fav as any).total_episodes;
+
+                // O6：异常减少保护
+                if (
+                  originalEpisodes > 0 &&
+                  favEpisodeCount < originalEpisodes &&
+                  (originalEpisodes - favEpisodeCount) / originalEpisodes > 0.3
+                ) {
+                  cronLog(
+                    `⚠ 收藏集数异常减少，跳过: ${(fav as any).title} (${(fav as any).total_episodes} -> ${favEpisodeCount}, 原始: ${originalEpisodes})`
+                  );
+                  await markChecked(user, source, id);
+                  totalSkipped++;
+                  return;
+                }
+
                 await db.saveFavorite(user, source, id, {
                   title: favDetail.title || (fav as any).title,
                   source_name: (fav as any).source_name,
                   cover: favDetail.poster || (fav as any).cover,
                   year: favDetail.year || (fav as any).year,
                   total_episodes: favEpisodeCount,
+                  original_episodes: originalEpisodes, // O7：收藏也保留基线
                   save_time: Date.now(),
                   search_title: (fav as any).search_title,
                 } as any);
@@ -347,11 +466,12 @@ async function cronJobWithReport(targetUser?: string) {
                 );
                 totalUpdated++;
               } else {
-                // 集数未变化，也更新 save_time 标记为"已检查"
-                if ((fav as any).save_time !== now) {
+                // O3：集数未变，KV 记录检查时间；无 KV 时回退写 save_time
+                await markChecked(user, source, id);
+                if (!cronKV && (fav as any).save_time !== Date.now()) {
                   await db.saveFavorite(user, source, id, {
                     ...(fav as any),
-                    save_time: now,
+                    save_time: Date.now(),
                   });
                 }
                 totalSkipped++;
@@ -380,15 +500,16 @@ async function cronJobWithReport(targetUser?: string) {
     report.cacheHits = detailCache.size;
     report.updated = totalUpdated;
     report.skipped = totalSkipped;
-    report.skippedRecent24h = totalSkippedRecent;
+    report.skippedRecent = totalSkippedRecent;
     report.failed = totalFailed;
+    report.kvCheckEnabled = !!cronKV; // O3：是否启用 KV 检查记录
     if (skippedSources.length > 0) {
       report.skippedSources = skippedSources;
     }
     cronLog(
       `完成: subrequest ${subrequestCount}次, 缓存 ${detailCache.size} 条, ` +
         `更新 ${totalUpdated} 条, 跳过(集数同) ${totalSkipped} 条, ` +
-        `跳过(24h内) ${totalSkippedRecent} 条, 失败 ${totalFailed} 条` +
+        `跳过(近期) ${totalSkippedRecent} 条, 失败 ${totalFailed} 条` +
         (skippedSources.length > 0
           ? `, 源站跳过: ${skippedSources.join(', ')}`
           : '')

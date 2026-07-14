@@ -1247,13 +1247,20 @@ function PlayPageClient() {
     }
 
     try {
+      const latestEpisodes = detailRef.current?.episodes.length || 1;
+      const recordKey = `${currentSourceRef.current}+${currentIdRef.current}`;
+      const allRecords = await getAllPlayRecords();
+      const existingRecord = allRecords[recordKey] || null;
+
       await savePlayRecord(currentSourceRef.current, currentIdRef.current, {
         title: videoTitleRef.current,
         source_name: detailRef.current?.source_name || '',
         year: detailRef.current?.year,
         cover: detailRef.current?.poster || '',
         index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
-        total_episodes: detailRef.current?.episodes.length || 1,
+        total_episodes: latestEpisodes,
+        // 冻结基线集数：首次观看时初始化，后续保存保留，用于检测新集数更新
+        original_episodes: existingRecord?.original_episodes ?? latestEpisodes,
         play_time: Math.floor(currentTime),
         total_time: Math.floor(duration),
         save_time: Date.now(),

@@ -101,6 +101,8 @@ export interface SearchResult {
   poster: string;
   episodes: string[];
   episodes_titles: string[];
+  /** 源站真实总集数（vod_total），优先于 episodes.length 用于"更新集数"判断（O4） */
+  totalEpisodes?: number;
   source: string;
   source_name: string;
   class?: string;
