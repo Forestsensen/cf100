@@ -573,7 +573,7 @@ function PlayPageClient() {
     // 统一走已验证的 /api/proxy/m3u8 强路径（含 URL 重写，避免相对分片 404）；
     // 通过 adblock 参数把用户 UI 开关传递至服务端，使双开关联动一致。
     if (isSafari && blockAdEnabledRef.current && isHlsUrl(newUrl)) {
-      const src = currentSourceRef.current?.key || '';
+      const src = currentSourceRef.current || '';
       newUrl = `/api/proxy/m3u8?url=${encodeURIComponent(newUrl)}&moontv-source=${encodeURIComponent(src)}&adblock=${blockAdEnabledRef.current ? 1 : 0}`;
       console.log('[Safari] 使用服务端广告过滤:', newUrl);
     }
