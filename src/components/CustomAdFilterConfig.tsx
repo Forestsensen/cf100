@@ -149,18 +149,12 @@ function filterAdsFromM3U8(type, m3u8Content) {
   const lines = m3u8Content.split('\\n');
   const filteredLines = [];
 
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
 
-    // 跳过 #EXT-X-DISCONTINUITY 标识
-    if (line.includes('#EXT-X-DISCONTINUITY')) {
-      i++;
-      continue;
-    }
-
-    // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
-    if (line.includes('#EXTINF:')) {
+      // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
+      if (line.includes('#EXTINF:')) {
       // 检查下一行 URL 是否包含广告关键字
       if (i + 1 < lines.length) {
         const nextLine = lines[i + 1];

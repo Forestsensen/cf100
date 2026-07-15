@@ -5,51 +5,14 @@ import { NextResponse } from 'next/server';
 import { getConfig } from '@/lib/config';
 import { buildUpstreamHeaders, getBaseUrl, resolveUrl } from '@/lib/live';
 import { proxyErrorResponse, upstreamErrorStatus } from '@/lib/proxyError';
+import {
+  AD_DOMAINS,
+  DEAD_CDN_DOMAINS,
+  DIRECT_HOST_KEYWORDS,
+} from '@/lib/ad-rules';
 
 export const runtime = 'edge';
 
-// 已知的广告域名（精确匹配，避免误杀正常 CDN）
-const AD_DOMAINS: string[] = [
-  // 欧美通用广告网络
-  'doubleclick.net',
-  'googlesyndication.com',
-  'googleadservices.com',
-  'adsterra.com',
-  'propellerads.com',
-  'popads.net',
-  'revive-adserver.net',
-  'mediaad.org',
-  // 爱奇艺广告特征
-  'cupid.iqiyi.com',
-  'afp.iqiyi.com',
-  'ad.m.iqiyi.com',
-  'policy.video.iqiyi.com',
-  't7.cupid.iqiyi.com',
-  // 猫眼/美团广告特征
-  'ad.maoyan.com',
-  'analytics.maoyan.com',
-  's3plus.meituan.com',
-  'report.meituan.com',
-  'analytics.meituan.com',
-  'stat.mafengwo.cn',
-];
-
-// 已知死链/防盗链 CDN 节点（监控报告高频 4xx，跳过避免播放中断）
-const DEAD_CDN_DOMAINS: string[] = [
-  'vv.jisuzyv.com',
-  'vip.ffzy-plays.com',
-  'ukzy.ukubf3.com',
-  'v2.ppqrrs.com',
-  'v10.ppqrrs.com',
-];
-
-// 直连白名单：这些源的 TS/分片直连 CDN（国内直连快，省去 CF 中转、保白天高速）
-// 匹配方式 = 分片 URL 主机名包含以下关键字（覆盖其 API 与 CDN 域名）
-const DIRECT_HOST_KEYWORDS: string[] = [
-  'dytt', // 电影天堂（caiji.dyttzyapi.com / vip.dytt-tvs.com）
-  'iqiyi', // 爱奇艺（iqiyizyapi.com）
-  'yzzy', // 爱奇艺 CDN（api.yzzy-api.com / cdn.yzzy31-play.com）
-];
 function isDirectHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   return DIRECT_HOST_KEYWORDS.some((k) => h.includes(k));
@@ -191,14 +154,19 @@ export async function GET(request: Request) {
 
   const config = await getConfig();
   const liveSource = source
-    ? config.LiveConfig?.find((s: any) => s.key === source)
+    ? config.LiveConfig?.find((s) => s.key === source)
     : null;
   const ua =
     liveSource?.ua ||
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-  // 获取去广告开关（默认开启）
-  const adBlockEnabled = config.SiteConfig?.EnableAdBlock !== false;
+  // 获取去广告开关：优先使用客户端传入的 adblock 参数（用户 UI 开关为权威），
+  // 未传时回退到后台 EnableAdBlock 配置（live 页等无客户端上下文时生效）
+  const adBlockParam = searchParams.get('adblock');
+  const adBlockEnabled =
+    adBlockParam !== null
+      ? adBlockParam === '1'
+      : config.SiteConfig?.EnableAdBlock !== false;
 
   let response: Response | null = null;
   let responseUsed = false;

@@ -24,6 +24,7 @@ import {
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { AD_KEYWORDS } from '@/lib/ad-rules';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
@@ -97,6 +98,54 @@ function PlayPageClient() {
     blockAdEnabledRef.current = blockAdEnabled;
   }, [blockAdEnabled]);
 
+  // 自定义去广告代码（后台 CustomAdFilterCode）
+  const [customAdFilterCode, setCustomAdFilterCode] = useState<string>('');
+  const customAdFilterCodeRef = useRef(customAdFilterCode);
+  useEffect(() => {
+    customAdFilterCodeRef.current = customAdFilterCode;
+  }, [customAdFilterCode]);
+
+  // 获取并缓存后台自定义去广告代码
+  useEffect(() => {
+    const fetchAdFilterCode = async () => {
+      try {
+        const cachedCode = localStorage.getItem('customAdFilterCode');
+        const cachedVersion = localStorage.getItem('customAdFilterVersion');
+
+        if (cachedCode && cachedVersion) {
+          setCustomAdFilterCode(cachedCode);
+          console.log('使用缓存的去广告代码');
+        }
+
+        const version =
+          (window as any).RUNTIME_CONFIG?.CUSTOM_AD_FILTER_VERSION || 0;
+
+        if (version === 0) {
+          localStorage.removeItem('customAdFilterCode');
+          localStorage.removeItem('customAdFilterVersion');
+          setCustomAdFilterCode('');
+          return;
+        }
+
+        if (!cachedVersion || parseInt(cachedVersion) !== version) {
+          console.log('检测到去广告代码更新（版本 ' + version + '），获取最新代码');
+          const fullResponse = await fetch('/api/ad-filter?full=true');
+          if (!fullResponse.ok) {
+            console.warn('获取完整去广告代码失败，使用缓存');
+            return;
+          }
+          const { code, version: newVersion } = await fullResponse.json();
+          localStorage.setItem('customAdFilterCode', code || '');
+          localStorage.setItem('customAdFilterVersion', String(newVersion || 0));
+          setCustomAdFilterCode(code || '');
+          console.log('去广告代码已更新到版本 ' + newVersion);
+        }
+      } catch (error) {
+        console.error('获取自定义去广告代码失败:', error);
+      }
+    };
+    fetchAdFilterCode();
+  }, []);
 
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
@@ -521,8 +570,11 @@ function PlayPageClient() {
     let newUrl = detailData?.episodes[episodeIndex] || '';
 
     // Safari 浏览器使用服务端广告过滤（因为 Safari 原生 HLS 不经过 hls.js）
+    // 统一走已验证的 /api/proxy/m3u8 强路径（含 URL 重写，避免相对分片 404）；
+    // 通过 adblock 参数把用户 UI 开关传递至服务端，使双开关联动一致。
     if (isSafari && blockAdEnabledRef.current && isHlsUrl(newUrl)) {
-      newUrl = `/api/proxy/filter-m3u8?url=${encodeURIComponent(newUrl)}`;
+      const src = currentSourceRef.current?.key || '';
+      newUrl = `/api/proxy/m3u8?url=${encodeURIComponent(newUrl)}&moontv-source=${encodeURIComponent(src)}&adblock=${blockAdEnabledRef.current ? 1 : 0}`;
       console.log('[Safari] 使用服务端广告过滤:', newUrl);
     }
 
@@ -602,29 +654,33 @@ function PlayPageClient() {
   function filterAdsFromM3U8(m3u8Content: string): string {
     if (!m3u8Content) return '';
 
-    // 广告关键字列表（覆盖爱艺奇、优质资源、电影天堂、艾旦影视、猫眼等源）
-    const adKeywords = [
-      // 通用广告关键字
-      'sponsor', '/ad/', '/ads/', 'advert', 'advertisement',
-      '/adjump', 'redtraffic',
-      // 爱艺奇/爱奇艺 广告特征
-      'cupid.iqiyi.com', 'afp.iqiyi.com', 'ad.m.iqiyi.com',
-      'policy.video.iqiyi.com', 't7.cupid.iqiyi.com',
-      // 猫眼广告特征（更新）
-      'maoyan.*ad', 'analytics.meituan', 'stat.mafengwo',
-      'maoyan.com/ad', 'maoyan.com/advert', 'maoyan.com/tracking',
-      'ad.maoyan.com', 'analytics.maoyan.com',
-      'meituan.com/ad', 'meituan.com/advert', 'meituan.com/tracking',
-      's3plus.meituan.com', 'report.meituan.com',
-      // 电影天堂/艾旦影视/优质资源 通用广告特征
-      'pre_roll', 'mid_roll', 'post_roll',
-      'preroll', 'midroll', 'postroll',
-      '/adjump', 'redtraffic',
-      // 广告追踪像素
-      '.gif?', '.png?ad',
-      // 广告 CDN 域名
-      'doubleclick', 'googlesyndication', 'adservice',
-    ];
+    // 优先使用后台自定义去广告代码
+    const customCode = customAdFilterCodeRef.current;
+    if (customCode && customCode.trim()) {
+      try {
+        const jsCode = customCode
+          .replace(/(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*([,)])/g, '$1$3')
+          .replace(/\)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*\{/g, ') {')
+          .replace(/(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*=/g, '$1 $2 =');
+
+        // eslint-disable-next-line no-new-func
+        const customFunction = new Function(
+          'type',
+          'm3u8Content',
+          jsCode + '\nreturn filterAdsFromM3U8(type, m3u8Content);'
+        );
+        const result = customFunction(currentSourceRef.current, m3u8Content);
+        console.log('✅ 使用自定义去广告代码');
+        if (typeof result === 'string' && result) return result;
+      } catch (err) {
+        console.error('执行自定义去广告代码失败,降级使用默认规则:', err);
+      }
+    }
+
+    // 广告关键字列表（来自共享模块 ad-rules.ts，与服务端 m3u8 路由统一维护）
+    const adKeywords = AD_KEYWORDS;
+    // 性能优化：关键字一次性转小写，避免循环内逐次 toLowerCase（O6）
+    const adKeywordsLower = adKeywords.map((k) => k.toLowerCase());
 
     // 按行分割M3U8内容
     const lines = m3u8Content.split('\n');
@@ -634,19 +690,14 @@ function PlayPageClient() {
     while (i < lines.length) {
       const line = lines[i];
 
-      // 跳过 #EXT-X-DISCONTINUITY 标识
-      if (line.includes('#EXT-X-DISCONTINUITY')) {
-        i++;
-        continue;
-      }
-
       // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
       if (line.includes('#EXTINF:')) {
         // 检查下一行 URL 是否包含广告关键字
         if (i + 1 < lines.length) {
           const nextLine = lines[i + 1];
-          const containsAdKeyword = adKeywords.some(keyword =>
-            nextLine.toLowerCase().includes(keyword.toLowerCase())
+          const nextLower = nextLine.toLowerCase();
+          const containsAdKeyword = adKeywordsLower.some((keyword) =>
+            nextLower.includes(keyword)
           );
 
           if (containsAdKeyword) {
@@ -657,7 +708,7 @@ function PlayPageClient() {
         }
       }
 
-      // 保留当前行
+      // 保留当前行（含 #EXT-X-DISCONTINUITY 标记，不误删以免音视频错位）
       filteredLines.push(line);
       i++;
     }

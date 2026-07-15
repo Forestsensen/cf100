@@ -18,12 +18,12 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const full = searchParams.get('full') === 'true';
 
-    const version = (config.SiteConfig as any)?.CustomAdFilterVersion || 0;
+    const version = config.SiteConfig?.CustomAdFilterVersion || 0;
 
     if (full) {
       // 返回完整代码和版本号
       return NextResponse.json({
-        code: (config.SiteConfig as any)?.CustomAdFilterCode || '',
+        code: config.SiteConfig?.CustomAdFilterCode || '',
         version,
       });
     } else {
