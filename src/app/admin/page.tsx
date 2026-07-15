@@ -37,6 +37,7 @@ import {
   Tv,
   Users,
   Video,
+  Filter,
 } from 'lucide-react';
 import { GripVertical } from 'lucide-react';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -45,6 +46,7 @@ import { createPortal } from 'react-dom';
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
+import CustomAdFilterConfig from '@/components/CustomAdFilterConfig';
 import DataMigration from '@/components/DataMigration';
 import PageLayout from '@/components/PageLayout';
 import SourceTestModule from '@/components/SourceTestModule';
@@ -4579,6 +4581,7 @@ function AdminPageClient() {
     configFile: false,
     dataMigration: false,
     sourceTest: false,
+    customAdFilter: false,
   });
 
   // 获取管理员配置
@@ -4809,6 +4812,21 @@ function AdminPageClient() {
               onToggle={() => toggleTab('sourceTest')}
             >
               <SourceTestModule />
+            </CollapsibleTab>
+
+            {/* 自定义去广告标签 */}
+            <CollapsibleTab
+              title='自定义去广告'
+              icon={
+                <Filter
+                  size={20}
+                  className='text-gray-600 dark:text-gray-400'
+                />
+              }
+              isExpanded={expandedTabs.customAdFilter}
+              onToggle={() => toggleTab('customAdFilter')}
+            >
+              <CustomAdFilterConfig config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
           </div>
         </div>
