@@ -96,6 +96,78 @@ function isAdEndMarker(line: string): boolean {
 }
 
 /**
+ * 前贴广告预检测：基于首个 #EXT-X-DISCONTINUITY 之前的分片块。
+ *
+ * 聚合源（爱奇艺等）普遍用 DISCONTINUITY 拼接前贴广告：广告段位于首个
+ * DISCONTINUITY 之前。只要该块像是广告（总时长足够 / 命中广告 URL / host 发散），
+ * 整块前置分片移除。注意：不删除 DISCONTINUITY 标记本身，避免 A/V 不同步。
+ */
+function computePreRollRemoval(lines: string[], mainHost: string): Set<number> {
+  const remove = new Set<number>();
+  let discIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === '#EXT-X-DISCONTINUITY') {
+      discIdx = i;
+      break;
+    }
+  }
+  if (discIdx === -1) return remove;
+
+  interface PreSeg {
+    extIdx: number;
+    urlIdx: number;
+    url: string;
+  }
+  const segs: PreSeg[] = [];
+  for (let i = 0; i < discIdx; i++) {
+    if (/^#EXT[-X]?INF:/i.test(lines[i].trim())) {
+      const nxt = i + 1 < lines.length ? lines[i + 1].trim() : '';
+      if (nxt && !nxt.startsWith('#')) {
+        segs.push({ extIdx: i, urlIdx: i + 1, url: nxt });
+      }
+    }
+  }
+  if (segs.length < 2) return remove; // 单段不构成前贴块
+
+  let totalDur = 0;
+  for (const s of segs) {
+    const m = lines[s.extIdx].match(/#EXT[-X]?INF:([\d.]+)/i);
+    totalDur += m ? parseFloat(m[1]) : 0;
+  }
+
+  let looksAd = totalDur >= 30;
+  if (!looksAd && mainHost) {
+    for (const s of segs) {
+      try {
+        const hh = new URL(s.url).hostname.toLowerCase();
+        if (hh && hh !== mainHost) {
+          looksAd = true;
+          break;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  if (!looksAd) {
+    for (const s of segs) {
+      if (isAdSegmentUrl(s.url)) {
+        looksAd = true;
+        break;
+      }
+    }
+  }
+
+  if (looksAd) {
+    for (const s of segs) {
+      remove.add(s.extIdx);
+      remove.add(s.urlIdx);
+    }
+  }
+  return remove;
+}
+
+/**
  * 过滤 M3U8 中的广告片段
  *
  * 策略（按优先级）：
@@ -134,6 +206,9 @@ function filterAdsFromM3U8(content: string): string {
     }
   }
 
+  // ---- 前贴广告预检测：首个 DISCONTINUITY 之前的块（多段前贴也能拦）----
+  const preRollRemoval = computePreRollRemoval(lines, mainHost);
+
   // ---- 收集所有 EXTINF+URL 段信息（前贴检测需要）----
   interface SegInfo {
     dur: number;
@@ -162,6 +237,12 @@ function filterAdsFromM3U8(content: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
+
+    // 前贴预检测：跳过首个 DISCONTINUITY 之前的广告分片
+    if (preRollRemoval.has(i)) {
+      i++;
+      continue;
+    }
 
     // 广告起始标记
     if (isAdStartMarker(trimmed)) {
