@@ -2000,12 +2000,11 @@ function PlayPageClient() {
     };
   }, []);
 
-  // ====== DOM 层广告拦截（兜底防护）======
-  // 聚合源经常通过 iframe / div 覆盖层注入赌博广告
-  // m3u8 过滤只对分片级广告有效，DOM 层的必须用 JS 移除
+  // ====== DOM 层广告拦截（强力防护 v2）======
+  // 聚合源通过 img/div/iframe 覆盖层注入赌博广告（如开元棋牌）
+  // 策略: CSS 注入隐藏(最高优先级) + JS 扫描移除(兜底) + MutationObserver(实时)
   useEffect(() => {
-    // 博彩/广告关键词（用于检测可疑元素）
-    const AD_KEYWORDS_DOM = [
+    const AD_KW = [
       '开元棋牌',
       'PG电子',
       '棋牌',
@@ -2020,138 +2019,156 @@ function PlayPageClient() {
       '71044377',
       'xcvpn.app',
       'xcvpn',
-      // 通用广告特征
-      '广告',
     ];
-
-    const GAMBLING_DOMAIN_PATTERN =
+    const NUM_DOMAIN_RE =
       /^\d{4,8}\.(com|top|cc|app|xyz|win|fun|live|pro|vip)$/;
 
-    /**
-     * 检测一个元素是否疑似广告（iframe/div 覆盖层）
-     */
-    function isAdElement(el: HTMLElement): boolean {
-      // 1. 检查标签名
+    // --- 阶段 1：注入 CSS 隐藏规则（比 JS 移除更快、更可靠）---
+    const cssEl = document.createElement('style');
+    cssEl.id = 'adblock-css-shield';
+    cssEl.textContent = [
+      // 隐藏含博彩关键词的元素（通过 class/id/style 属性匹配）
+      ...AD_KW.map(
+        (kw) =>
+          `[class*="${kw}"], [id*="${kw}"], [style*="${kw}"] { display:none!important;visibility:hidden!important;pointer-events:none!important; }`
+      ),
+      // 隐藏来自赌博域名的 iframe
+      'iframe[src*="681215"],iframe[src*="481432"],iframe[src*="847562"],iframe[src*="7607558"],iframe[src*="xcvpn"]{display:none!important;}',
+      // 隐藏播放器容器内的可疑覆盖图片
+      '.artplayer-container img[style*="position:absolute"],.artplayer-container img[style*="position:fixed"]{display:none!important;}',
+    ].join('\n');
+    (document.head || document.documentElement).appendChild(cssEl);
+
+    // --- 阶段 2：JS 扫描 + 移除 ---
+    function hasAdText(t: string): boolean {
+      if (!t || t.length > 500) return false;
+      let c = 0;
+      for (const k of AD_KW) if (t.indexOf(k) !== -1) c++;
+      return c >= 1;
+    }
+
+    function isAd(el: HTMLElement): boolean {
       const tag = el.tagName.toLowerCase();
+      const src = (el.getAttribute('src') || '').toLowerCase();
+      const style = el.getAttribute('style')?.toLowerCase() || '';
+      const text = (el.textContent || '').trim();
+
+      // iframe 检查
       if (tag === 'iframe') {
-        const src = el.getAttribute('src') || '';
-        // iframe src 包含赌博域名或数字域名
-        if (GAMBLING_DOMAIN_PATTERN.test(src.replace(/^https?:\/\//, '')))
-          return true;
-        for (const kw of AD_KEYWORDS_DOM) {
-          if (src.includes(kw)) return true;
-        }
-        // 无 src 或 about:blank 的隐藏 iframe 高度可疑
-        if (!src || src === 'about:blank') {
-          const style = window.getComputedStyle(el);
-          if (
-            (style.position === 'absolute' || style.position === 'fixed') &&
-            parseInt(style.width || '0', 10) > 100 &&
-            parseInt(style.height || '0', 10) > 50
-          )
-            return true;
-        }
+        const s = el.getAttribute('src') || '';
+        if (NUM_DOMAIN_RE.test(s.replace(/^https?:\/\//, ''))) return true;
+        for (const k of AD_KW) if (s.includes(k)) return true;
       }
-
-      // 2. 检查 div/span 等覆盖层是否包含广告文字
-      if (tag === 'div' || tag === 'span' || tag === 'p' || tag === 'a') {
-        const text = (el.textContent || '').trim();
-        if (!text) return false;
-
-        // 包含多个博彩关键词 → 几乎确定是广告
-        let matchCount = 0;
-        for (const kw of AD_KEYWORDS_DOM) {
-          if (text.indexOf(kw) !== -1) matchCount++;
-        }
-        if (matchCount >= 2) return true;
-
-        // 单个强关键词 + 可疑样式
-        if (matchCount >= 1) {
-          const style = window.getComputedStyle(el);
-          const pos = style.position;
-          if (pos === 'absolute' || pos === 'fixed') {
-            const zIndex = parseInt(style.zIndex || '0', 10);
-            if (zIndex > 100) return true;
-          }
-        }
+      // img 检查
+      if (tag === 'img') {
+        if (NUM_DOMAIN_RE.test(src.replace(/^https?:\/\//, ''))) return true;
+        for (const k of ['681215', '481432', '847562', 'xcvpn'])
+          if (src.includes(k)) return true;
+        const r = el.getBoundingClientRect();
+        if (r.width > 200 && r.height > 100 && hasAdText(text)) return true;
       }
-
-      // 3. 检查内联样式中包含赌博 URL 的背景图
-      const bgStyle = el.getAttribute('style') || '';
-      for (const kw of ['681215', '481432', '847562']) {
-        if (bgStyle.indexOf(kw) !== -1) return true;
-      }
+      // 内联样式检查
+      for (const k of [
+        '681215',
+        '481432',
+        '847562',
+        'xcvpn',
+        '开元棋牌',
+        'PG电子',
+      ])
+        if (style.includes(k)) return true;
+      // 文本内容检查（可见且有一定尺寸）
+      if (text && el.offsetHeight > 0 && el.offsetWidth > 0 && hasAdText(text))
+        if (el.offsetWidth > 80 || el.offsetHeight > 40) return true;
 
       return false;
     }
 
-    /** 移除单个广告元素 */
-    function removeAdElement(el: HTMLElement) {
+    let cnt = 0;
+    function kill(el: HTMLElement) {
       try {
+        cnt++;
         console.log(
-          '[DOM去广告] 移除:',
-          el.tagName,
-          el.className?.toString?.() || '',
-          (el.textContent || '').substring(0, 60)
+          `[DOM去广告 #${cnt}] ${el.tagName} ${(el.className || '')
+            .toString()
+            .slice(0, 50)} ${(el.textContent || '').slice(0, 70)}`
         );
-        el.remove();
+        (el as any).style.setProperty('display', 'none', 'important');
+        setTimeout(() => {
+          try {
+            el.remove();
+          } catch {
+            /* ignore */
+          }
+        }, 0);
       } catch {
-        // 移除失败（可能已被移除）
+        /* ignore */
       }
     }
 
-    /** 全量扫描一次 DOM */
-    function scanAndClean() {
-      // 扫描所有 iframe
-      document.querySelectorAll('iframe').forEach((el) => {
-        if (isAdElement(el as HTMLIFrameElement))
-          removeAdElement(el as HTMLElement);
-      });
-
-      // 扫描所有绝对定位 / 固定定位的可疑元素
-      document.querySelectorAll('div, span, p, a, img').forEach((el) => {
-        const htmlEl = el as HTMLElement;
-        const style = window.getComputedStyle(htmlEl);
-        if (
-          (style.position === 'absolute' || style.position === 'fixed') &&
-          isAdElement(htmlEl)
-        ) {
-          removeAdElement(htmlEl);
+    function scan() {
+      cnt = 0;
+      document.querySelectorAll('iframe,img,div,span,p,a').forEach((el) => {
+        try {
+          if (
+            (el as HTMLElement).offsetParent !== null &&
+            isAd(el as HTMLElement)
+          )
+            kill(el as HTMLElement);
+        } catch {
+          /* ignore */
         }
       });
     }
 
-    // 初始扫描（延迟执行，等页面渲染完）
-    const initialTimer = setTimeout(scanAndClean, 1500);
+    // 三波快速扫描（500ms / 1500ms / 3000ms）
+    const t1 = setTimeout(scan, 500);
+    const t2 = setTimeout(scan, 1500);
+    const t3 = setTimeout(scan, 3000);
+    // 持续扫描每秒一次
+    const iv = setInterval(scan, 1000);
 
-    // 定时扫描（每 2 秒扫一次）
-    const intervalId = setInterval(scanAndClean, 2000);
-
-    // MutationObserver 监听新增节点
-    let observer: MutationObserver | null = null;
+    // MutationObserver 监听全文档变更（包括属性变化如 src/style）
+    let ob: MutationObserver | null = null;
     try {
-      observer = new MutationObserver((mutations) => {
-        let hasNewNodes = false;
+      ob = new MutationObserver((mutations) => {
         for (const m of mutations) {
-          if (m.addedNodes.length > 0) {
-            hasNewNodes = true;
-            break;
+          for (const node of m.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const e = node as HTMLElement;
+              if (isAd(e)) kill(e);
+              try {
+                e.querySelectorAll('iframe,img,div,span').forEach((c) => {
+                  if (isAd(c as HTMLElement)) kill(c as HTMLElement);
+                });
+              } catch {
+                /* ignore */
+              }
+            }
           }
         }
-        if (hasNewNodes) {
-          // 延迟一点让广告脚本完成插入
-          setTimeout(scanAndClean, 100);
-        }
       });
-      observer.observe(document.body, { childList: true, subtree: true });
+      ob.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['src', 'style', 'class'],
+      });
     } catch (e) {
-      console.warn('[DOM去广告] MutationObserver 创建失败:', e);
+      console.warn('[DOM去广告] Observer err:', e);
     }
 
     return () => {
-      clearTimeout(initialTimer);
-      clearInterval(intervalId);
-      if (observer) observer.disconnect();
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearInterval(iv);
+      if (ob) ob.disconnect();
+      try {
+        cssEl.remove();
+      } catch {
+        /* ignore */
+      }
     };
   }, []);
 
