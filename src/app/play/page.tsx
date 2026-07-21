@@ -1,4 +1,3 @@
-
 /* eslint-disable @typescript-eslint/ban-ts-comment, @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, no-console, @next/next/no-img-element */
 
 'use client';
@@ -9,6 +8,7 @@ import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
+import { builtInFilterAds } from '@/lib/ad-filter-builtin';
 import {
   deleteFavorite,
   deletePlayRecord,
@@ -24,7 +24,6 @@ import {
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-import { AD_KEYWORDS } from '@/lib/ad-rules';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
@@ -128,7 +127,9 @@ function PlayPageClient() {
         }
 
         if (!cachedVersion || parseInt(cachedVersion) !== version) {
-          console.log('检测到去广告代码更新（版本 ' + version + '），获取最新代码');
+          console.log(
+            '检测到去广告代码更新（版本 ' + version + '），获取最新代码'
+          );
           const fullResponse = await fetch('/api/ad-filter?full=true');
           if (!fullResponse.ok) {
             console.warn('获取完整去广告代码失败，使用缓存');
@@ -136,7 +137,10 @@ function PlayPageClient() {
           }
           const { code, version: newVersion } = await fullResponse.json();
           localStorage.setItem('customAdFilterCode', code || '');
-          localStorage.setItem('customAdFilterVersion', String(newVersion || 0));
+          localStorage.setItem(
+            'customAdFilterVersion',
+            String(newVersion || 0)
+          );
           setCustomAdFilterCode(code || '');
           console.log('去广告代码已更新到版本 ' + newVersion);
         }
@@ -234,12 +238,23 @@ function PlayPageClient() {
 
   // 保存优选时的测速结果，避免EpisodeSelector重复测速
   const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
-    Map<string, { quality: string; loadSpeed: string; pingTime: number; score?: number }>
+    Map<
+      string,
+      { quality: string; loadSpeed: string; pingTime: number; score?: number }
+    >
   >(new Map());
 
   // 优选阶段的实时测速进度（用于UI展示）
   const [preferringResults, setPreferringResults] = useState<
-    Array<{ sourceName: string; quality: string; loadSpeed: string; pingTime: number; score: number; done: boolean; error?: boolean }>
+    Array<{
+      sourceName: string;
+      quality: string;
+      loadSpeed: string;
+      pingTime: number;
+      score: number;
+      done: boolean;
+      error?: boolean;
+    }>
   >([]);
 
   // 折叠状态（仅在 lg 及以上屏幕有效）
@@ -301,7 +316,10 @@ function PlayPageClient() {
               testResult,
             };
           } catch (error) {
-            console.error(`[优选测速] ${source.source_name} 失败:`, error instanceof Error ? error.message : error);
+            console.error(
+              `[优选测速] ${source.source_name} 失败:`,
+              error instanceof Error ? error.message : error
+            );
             return null;
           }
         })
@@ -313,32 +331,55 @@ function PlayPageClient() {
         const src = sources[index];
         if (!result) return null;
         const speedsSoFar = allResults
-          .filter(Boolean)
+          .filter(
+            (r): r is NonNullable<(typeof allResults)[number]> => r != null
+          )
           .map((r) => {
-            const m = r!.testResult.loadSpeed.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
+            const m = r.testResult.loadSpeed.match(
+              /^([\d.]+)\s*(KB\/s|MB\/s)$/
+            );
             if (!m) return 0;
             return m[2] === 'MB/s' ? parseFloat(m[1]) * 1024 : parseFloat(m[1]);
           })
           .filter((s) => s > 0);
         const pingsSoFar = allResults
-          .filter(Boolean)
-          .map((r) => r!.testResult.pingTime)
+          .filter(
+            (r): r is NonNullable<(typeof allResults)[number]> => r != null
+          )
+          .map((r) => r.testResult.pingTime)
           .filter((p) => p > 0);
-        const tempMaxSpeed = speedsSoFar.length > 0 ? Math.max(...speedsSoFar) : 1024;
-        const tempMinPing = pingsSoFar.length > 0 ? Math.min(...pingsSoFar) : 50;
-        const tempMaxPing = pingsSoFar.length > 0 ? Math.max(...pingsSoFar) : 1000;
+        const tempMaxSpeed =
+          speedsSoFar.length > 0 ? Math.max(...speedsSoFar) : 1024;
+        const tempMinPing =
+          pingsSoFar.length > 0 ? Math.min(...pingsSoFar) : 50;
+        const tempMaxPing =
+          pingsSoFar.length > 0 ? Math.max(...pingsSoFar) : 1000;
         return {
           sourceName: src.source_name,
           quality: result.testResult.quality,
           loadSpeed: result.testResult.loadSpeed,
           pingTime: result.testResult.pingTime,
-          score: calculateSourceScore(result.testResult, tempMaxSpeed, tempMinPing, tempMaxPing),
+          score: calculateSourceScore(
+            result.testResult,
+            tempMaxSpeed,
+            tempMinPing,
+            tempMaxPing
+          ),
           done: true,
         };
       });
       // 填充未完成的源（completedSoFar可能含null，用??兜底）
       const progressList = sources.map((src, idx) => {
-        return completedSoFar[idx] ?? { sourceName: src.source_name, quality: '', loadSpeed: '', pingTime: 0, score: 0, done: false };
+        return (
+          completedSoFar[idx] ?? {
+            sourceName: src.source_name,
+            quality: '',
+            loadSpeed: '',
+            pingTime: 0,
+            score: 0,
+            done: false,
+          }
+        );
       });
       setPreferringResults([...progressList]);
     }
@@ -430,7 +471,8 @@ function PlayPageClient() {
     setPreferringResults(
       sources.map((src, idx) => {
         const scored = resultsWithScore.find(
-          (r) => `${r.source.source}-${r.source.id}` === `${src.source}-${src.id}`
+          (r) =>
+            `${r.source.source}-${r.source.id}` === `${src.source}-${src.id}`
         );
         if (scored) {
           return {
@@ -444,17 +486,35 @@ function PlayPageClient() {
         }
         const allResult = allResults[idx];
         if (!allResult) {
-          return { sourceName: src.source_name, quality: '', loadSpeed: '', pingTime: 0, score: 0, done: true, error: true };
+          return {
+            sourceName: src.source_name,
+            quality: '',
+            loadSpeed: '',
+            pingTime: 0,
+            score: 0,
+            done: true,
+            error: true,
+          };
         }
-        return { sourceName: src.source_name, quality: '', loadSpeed: '', pingTime: 0, score: 0, done: true, error: true };
+        return {
+          sourceName: src.source_name,
+          quality: '',
+          loadSpeed: '',
+          pingTime: 0,
+          score: 0,
+          done: true,
+          error: true,
+        };
       })
     );
 
     console.log('播放源评分排序结果:');
     resultsWithScore.forEach((result, index) => {
       console.log(
-        `${index + 1}. ${result.source.source_name
-        } - 评分: ${result.score.toFixed(2)} (${result.testResult.quality}, ${result.testResult.loadSpeed
+        `${index + 1}. ${
+          result.source.source_name
+        } - 评分: ${result.score.toFixed(2)} (${result.testResult.quality}, ${
+          result.testResult.loadSpeed
         }, ${result.testResult.pingTime}ms)`
       );
     });
@@ -533,25 +593,30 @@ function PlayPageClient() {
   };
 
   // 检测是否为 Safari 浏览器（包括 iOS Safari）
-  const isSafari = typeof window !== 'undefined' && (() => {
-    const ua = navigator.userAgent;
-    // iOS Safari 检测
-    const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
-    const isIOS13Plus = ua.includes('Macintosh') && navigator.maxTouchPoints > 1;
-    // macOS Safari 检测（排除 Chrome）
-    const isMacSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
-    return isIOS || isIOS13Plus || isMacSafari;
-  })();
+  const isSafari =
+    typeof window !== 'undefined' &&
+    (() => {
+      const ua = navigator.userAgent;
+      // iOS Safari 检测
+      const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+      const isIOS13Plus =
+        ua.includes('Macintosh') && navigator.maxTouchPoints > 1;
+      // macOS Safari 检测（排除 Chrome）
+      const isMacSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
+      return isIOS || isIOS13Plus || isMacSafari;
+    })();
 
   // 判断 URL 是否为 HLS 流
   const isHlsUrl = (url: string): boolean => {
     if (!url) return false;
     const lowerUrl = url.toLowerCase();
-    return lowerUrl.includes('.m3u8') ||
-           lowerUrl.includes('.m3u') ||
-           lowerUrl.includes('/hls/') ||
-           lowerUrl.includes('format=m3u8') ||
-           lowerUrl.includes('type=m3u8');
+    return (
+      lowerUrl.includes('.m3u8') ||
+      lowerUrl.includes('.m3u') ||
+      lowerUrl.includes('/hls/') ||
+      lowerUrl.includes('format=m3u8') ||
+      lowerUrl.includes('type=m3u8')
+    );
   };
 
   // 更新视频地址
@@ -574,7 +639,11 @@ function PlayPageClient() {
     // 通过 adblock 参数把用户 UI 开关传递至服务端，使双开关联动一致。
     if (isSafari && blockAdEnabledRef.current && isHlsUrl(newUrl)) {
       const src = currentSourceRef.current || '';
-      newUrl = `/api/proxy/m3u8?url=${encodeURIComponent(newUrl)}&moontv-source=${encodeURIComponent(src)}&adblock=${blockAdEnabledRef.current ? 1 : 0}`;
+      newUrl = `/api/proxy/m3u8?url=${encodeURIComponent(
+        newUrl
+      )}&moontv-source=${encodeURIComponent(src)}&adblock=${
+        blockAdEnabledRef.current ? 1 : 0
+      }`;
       console.log('[Safari] 使用服务端广告过滤:', newUrl);
     }
 
@@ -651,17 +720,39 @@ function PlayPageClient() {
   };
 
   // 去广告相关函数
+  // 两阶段：1) 内置 v3 基线（始终生效，不依赖 /admin 是否配置成功）
+  //         2) 后台自定义代码作为增强（若存在且有效）
   function filterAdsFromM3U8(m3u8Content: string): string {
     if (!m3u8Content) return '';
 
-    // 优先使用后台自定义去广告代码
+    const srcType = currentSourceRef.current;
+    let result = m3u8Content;
+
+    // 阶段 1：内置 v3 去广告（保证基线，爱奇艺等多段短分片前贴也能拦）
+    try {
+      const built = builtInFilterAds(srcType, result);
+      if (typeof built === 'string' && built) result = built;
+    } catch (e) {
+      console.error('内置去广告异常，降级保留原内容:', e);
+    }
+
+    // 阶段 2：后台自定义去广告代码作为增强（可选）
     const customCode = customAdFilterCodeRef.current;
     if (customCode && customCode.trim()) {
       try {
         const jsCode = customCode
-          .replace(/(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*([,)])/g, '$1$3')
-          .replace(/\)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*\{/g, ') {')
-          .replace(/(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*=/g, '$1 $2 =');
+          .replace(
+            /(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*([,)])/g,
+            '$1$3'
+          )
+          .replace(
+            /\)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*\{/g,
+            ') {'
+          )
+          .replace(
+            /(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*=/g,
+            '$1 $2 ='
+          );
 
         // eslint-disable-next-line no-new-func
         const customFunction = new Function(
@@ -669,51 +760,17 @@ function PlayPageClient() {
           'm3u8Content',
           jsCode + '\nreturn filterAdsFromM3U8(type, m3u8Content);'
         );
-        const result = customFunction(currentSourceRef.current, m3u8Content);
-        console.log('✅ 使用自定义去广告代码');
-        if (typeof result === 'string' && result) return result;
-      } catch (err) {
-        console.error('执行自定义去广告代码失败,降级使用默认规则:', err);
-      }
-    }
-
-    // 广告关键字列表（来自共享模块 ad-rules.ts，与服务端 m3u8 路由统一维护）
-    const adKeywords = AD_KEYWORDS;
-    // 性能优化：关键字一次性转小写，避免循环内逐次 toLowerCase（O6）
-    const adKeywordsLower = adKeywords.map((k) => k.toLowerCase());
-
-    // 按行分割M3U8内容
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
-
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i];
-
-      // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
-      if (line.includes('#EXTINF:')) {
-        // 检查下一行 URL 是否包含广告关键字
-        if (i + 1 < lines.length) {
-          const nextLine = lines[i + 1];
-          const nextLower = nextLine.toLowerCase();
-          const containsAdKeyword = adKeywordsLower.some((keyword) =>
-            nextLower.includes(keyword)
-          );
-
-          if (containsAdKeyword) {
-            // 跳过 EXTINF 行和 URL 行
-            i += 2;
-            continue;
-          }
+        const r = customFunction(srcType, result);
+        if (typeof r === 'string' && r) {
+          result = r;
+          console.log('✅ 已叠加后台自定义去广告增强');
         }
+      } catch (err) {
+        console.error('执行自定义去广告代码失败,忽略:', err);
       }
-
-      // 保留当前行（含 #EXT-X-DISCONTINUITY 标记，不误删以免音视频错位）
-      filteredLines.push(line);
-      i++;
     }
 
-    return filteredLines.join('\n');
+    return result;
   }
   // 跳过片头片尾配置相关函数
   const handleSkipConfigChange = async (newConfig: {
@@ -890,13 +947,13 @@ function PlayPageClient() {
         const results = data.results.filter(
           (result: SearchResult) =>
             result.title.replaceAll(' ', '').toLowerCase() ===
-            videoTitleRef.current.replaceAll(' ', '').toLowerCase() &&
+              videoTitleRef.current.replaceAll(' ', '').toLowerCase() &&
             (videoYearRef.current
               ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
               : true) &&
             (searchType
               ? (searchType === 'tv' && result.episodes.length > 1) ||
-              (searchType === 'movie' && result.episodes.length === 1)
+                (searchType === 'movie' && result.episodes.length === 1)
               : true)
         );
         setAvailableSources(results);
@@ -1473,8 +1530,9 @@ function PlayPageClient() {
     // 非WebKit浏览器且播放器已存在，使用switch方法切换
     if (!isWebkit && artPlayerRef.current) {
       artPlayerRef.current.switch = videoUrl;
-      artPlayerRef.current.title = `${videoTitle} - 第${currentEpisodeIndex + 1
-        }集`;
+      artPlayerRef.current.title = `${videoTitle} - 第${
+        currentEpisodeIndex + 1
+      }集`;
       artPlayerRef.current.poster = videoCover;
       if (artPlayerRef.current?.video) {
         ensureVideoSource(
@@ -1542,18 +1600,45 @@ function PlayPageClient() {
               video.hls.destroy();
             }
             // Device detection (from ergTV v6.6.0)
-            const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-            const isIOS = /iPad|iPhone|iPod/i.test(userAgent) && !(window as any).MSStream;
-            const isIOS13 = isIOS || (userAgent.includes('Macintosh') && typeof navigator !== 'undefined' && navigator.maxTouchPoints >= 1);
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent) || isIOS13;
+            const userAgent =
+              typeof navigator !== 'undefined' ? navigator.userAgent : '';
+            const isIOS =
+              /iPad|iPhone|iPod/i.test(userAgent) && !(window as any).MSStream;
+            const isIOS13 =
+              isIOS ||
+              (userAgent.includes('Macintosh') &&
+                typeof navigator !== 'undefined' &&
+                navigator.maxTouchPoints >= 1);
+            const isMobile =
+              /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+                userAgent
+              ) || isIOS13;
 
             const getHlsBufferConfig = () => {
-              const mode = typeof window !== 'undefined' ? localStorage.getItem('playerBufferMode') || 'standard' : 'standard';
+              const mode =
+                typeof window !== 'undefined'
+                  ? localStorage.getItem('playerBufferMode') || 'standard'
+                  : 'standard';
               switch (mode) {
-                case 'enhanced': return { maxBufferLength: 45, backBufferLength: 45, maxBufferSize: 90 * 1000 * 1000 };
-                case 'max': return { maxBufferLength: 90, backBufferLength: 60, maxBufferSize: 180 * 1000 * 1000 };
-                default: return { maxBufferLength: 30, backBufferLength: 30, maxBufferSize: 60 * 1000 * 1000 };
-              };
+                case 'enhanced':
+                  return {
+                    maxBufferLength: 45,
+                    backBufferLength: 45,
+                    maxBufferSize: 90 * 1000 * 1000,
+                  };
+                case 'max':
+                  return {
+                    maxBufferLength: 90,
+                    backBufferLength: 60,
+                    maxBufferSize: 180 * 1000 * 1000,
+                  };
+                default:
+                  return {
+                    maxBufferLength: 30,
+                    backBufferLength: 30,
+                    maxBufferSize: 60 * 1000 * 1000,
+                  };
+              }
             };
 
             // Mobile device detection for buffer tuning
@@ -1566,13 +1651,25 @@ function PlayPageClient() {
 
               /* Buffer settings - use user-selected mode */
               maxBufferLength: isMobile
-                ? (isIOS13 ? 8 : isIOS ? 10 : 15)
+                ? isIOS13
+                  ? 8
+                  : isIOS
+                  ? 10
+                  : 15
                 : bufferConfig.maxBufferLength,
               backBufferLength: isMobile
-                ? (isIOS13 ? 5 : isIOS ? 8 : 10)
+                ? isIOS13
+                  ? 5
+                  : isIOS
+                  ? 8
+                  : 10
                 : bufferConfig.backBufferLength,
               maxBufferSize: isMobile
-                ? (isIOS13 ? 20 * 1000 * 1000 : isIOS ? 30 * 1000 * 1000 : 40 * 1000 * 1000)
+                ? isIOS13
+                  ? 20 * 1000 * 1000
+                  : isIOS
+                  ? 30 * 1000 * 1000
+                  : 40 * 1000 * 1000
                 : bufferConfig.maxBufferSize,
 
               /* Custom loader */
@@ -1825,7 +1922,7 @@ function PlayPageClient() {
           skipConfigRef.current.outro_time < 0 &&
           duration > 0 &&
           currentTime >
-          artPlayerRef.current.duration + skipConfigRef.current.outro_time
+            artPlayerRef.current.duration + skipConfigRef.current.outro_time
         ) {
           if (
             currentEpisodeIndexRef.current <
@@ -1939,27 +2036,30 @@ function PlayPageClient() {
             <div className='mb-6 w-80 mx-auto'>
               <div className='flex justify-center space-x-2 mb-4'>
                 <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${loadingStage === 'searching' || loadingStage === 'fetching'
-                    ? 'bg-green-500 scale-125'
-                    : loadingStage === 'preferring' ||
-                      loadingStage === 'ready'
+                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                    loadingStage === 'searching' || loadingStage === 'fetching'
+                      ? 'bg-green-500 scale-125'
+                      : loadingStage === 'preferring' ||
+                        loadingStage === 'ready'
                       ? 'bg-green-500'
                       : 'bg-gray-300'
-                    }`}
+                  }`}
                 ></div>
                 <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${loadingStage === 'preferring'
-                    ? 'bg-green-500 scale-125'
-                    : loadingStage === 'ready'
+                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                    loadingStage === 'preferring'
+                      ? 'bg-green-500 scale-125'
+                      : loadingStage === 'ready'
                       ? 'bg-green-500'
                       : 'bg-gray-300'
-                    }`}
+                  }`}
                 ></div>
                 <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${loadingStage === 'ready'
-                    ? 'bg-green-500 scale-125'
-                    : 'bg-gray-300'
-                    }`}
+                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                    loadingStage === 'ready'
+                      ? 'bg-green-500 scale-125'
+                      : 'bg-gray-300'
+                  }`}
                 ></div>
               </div>
 
@@ -1970,11 +2070,11 @@ function PlayPageClient() {
                   style={{
                     width:
                       loadingStage === 'searching' ||
-                        loadingStage === 'fetching'
+                      loadingStage === 'fetching'
                         ? '33%'
                         : loadingStage === 'preferring'
-                          ? '66%'
-                          : '100%',
+                        ? '66%'
+                        : '100%',
                   }}
                 ></div>
               </div>
@@ -1987,47 +2087,72 @@ function PlayPageClient() {
               </p>
 
               {/* 优选阶段实时测速进度 */}
-              {loadingStage === 'preferring' && preferringResults.length > 0 && (
-                <div className='mt-4 w-80 mx-auto'>
-                  <div className='text-xs text-gray-500 dark:text-gray-400 mb-2 text-left'>
-                    测速进度 ({preferringResults.filter(r => r.done).length}/{preferringResults.length})
-                  </div>
-                  <div className='space-y-1.5 max-h-48 overflow-y-auto'>
-                    {preferringResults.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs transition-all duration-300 ${
-                          item.done
-                            ? item.error
-                              ? 'bg-gray-100 dark:bg-gray-800/50 opacity-50'
-                              : 'bg-white dark:bg-gray-800 shadow-sm'
-                            : 'bg-gray-50 dark:bg-gray-800/30 animate-pulse'
-                        }`}
-                      >
-                        <div className='flex items-center gap-2 min-w-0 flex-1'>
-                          {!item.done ? (
-                            <div className='w-3 h-3 border-2 border-green-500 border-t-transparent rounded-full animate-spin flex-shrink-0' />
-                          ) : item.error ? (
-                            <span className='text-gray-400 flex-shrink-0'>-</span>
-                          ) : (
-                            <span className={`flex-shrink-0 font-bold ${item.score >= 80 ? 'text-amber-500' : item.score >= 50 ? 'text-green-500' : 'text-gray-400'}`}>
-                              {item.score.toFixed(0)}
+              {loadingStage === 'preferring' &&
+                preferringResults.length > 0 && (
+                  <div className='mt-4 w-80 mx-auto'>
+                    <div className='text-xs text-gray-500 dark:text-gray-400 mb-2 text-left'>
+                      测速进度 ({preferringResults.filter((r) => r.done).length}
+                      /{preferringResults.length})
+                    </div>
+                    <div className='space-y-1.5 max-h-48 overflow-y-auto'>
+                      {preferringResults.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs transition-all duration-300 ${
+                            item.done
+                              ? item.error
+                                ? 'bg-gray-100 dark:bg-gray-800/50 opacity-50'
+                                : 'bg-white dark:bg-gray-800 shadow-sm'
+                              : 'bg-gray-50 dark:bg-gray-800/30 animate-pulse'
+                          }`}
+                        >
+                          <div className='flex items-center gap-2 min-w-0 flex-1'>
+                            {!item.done ? (
+                              <div className='w-3 h-3 border-2 border-green-500 border-t-transparent rounded-full animate-spin flex-shrink-0' />
+                            ) : item.error ? (
+                              <span className='text-gray-400 flex-shrink-0'>
+                                -
+                              </span>
+                            ) : (
+                              <span
+                                className={`flex-shrink-0 font-bold ${
+                                  item.score >= 80
+                                    ? 'text-amber-500'
+                                    : item.score >= 50
+                                    ? 'text-green-500'
+                                    : 'text-gray-400'
+                                }`}
+                              >
+                                {item.score.toFixed(0)}
+                              </span>
+                            )}
+                            <span className='truncate text-gray-700 dark:text-gray-300'>
+                              {item.sourceName}
                             </span>
-                          )}
-                          <span className='truncate text-gray-700 dark:text-gray-300'>{item.sourceName}</span>
-                        </div>
-                        {item.done && !item.error && (
-                          <div className='flex items-center gap-2 flex-shrink-0 text-[11px] text-gray-500 dark:text-gray-400'>
-                            <span className={item.quality === '4K' || item.quality === '2K' ? 'text-purple-500' : item.quality === '1080p' || item.quality === '720p' ? 'text-green-500' : ''}>{item.quality}</span>
-                            <span>{item.loadSpeed}</span>
-                            <span>{item.pingTime}ms</span>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          {item.done && !item.error && (
+                            <div className='flex items-center gap-2 flex-shrink-0 text-[11px] text-gray-500 dark:text-gray-400'>
+                              <span
+                                className={
+                                  item.quality === '4K' || item.quality === '2K'
+                                    ? 'text-purple-500'
+                                    : item.quality === '1080p' ||
+                                      item.quality === '720p'
+                                    ? 'text-green-500'
+                                    : ''
+                                }
+                              >
+                                {item.quality}
+                              </span>
+                              <span>{item.loadSpeed}</span>
+                              <span>{item.pingTime}ms</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
             </div>
           </div>
         </div>
@@ -2112,7 +2237,10 @@ function PlayPageClient() {
             {videoTitle || '影片标题'}
             {totalEpisodes > 1 && (
               <span className='text-gray-500 dark:text-gray-400'>
-                {` > ${detail?.episodes_titles?.[currentEpisodeIndex] || `第 ${currentEpisodeIndex + 1} 集`}`}
+                {` > ${
+                  detail?.episodes_titles?.[currentEpisodeIndex] ||
+                  `第 ${currentEpisodeIndex + 1} 集`
+                }`}
               </span>
             )}
           </h1>
@@ -2131,8 +2259,9 @@ function PlayPageClient() {
               }
             >
               <svg
-                className={`w-3.5 h-3.5 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${isEpisodeSelectorCollapsed ? 'rotate-180' : 'rotate-0'
-                  }`}
+                className={`w-3.5 h-3.5 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${
+                  isEpisodeSelectorCollapsed ? 'rotate-180' : 'rotate-0'
+                }`}
                 fill='none'
                 stroke='currentColor'
                 viewBox='0 0 24 24'
@@ -2150,24 +2279,27 @@ function PlayPageClient() {
 
               {/* 精致的状态指示点 */}
               <div
-                className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full transition-all duration-200 ${isEpisodeSelectorCollapsed
-                  ? 'bg-orange-400 animate-pulse'
-                  : 'bg-green-400'
-                  }`}
+                className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full transition-all duration-200 ${
+                  isEpisodeSelectorCollapsed
+                    ? 'bg-orange-400 animate-pulse'
+                    : 'bg-green-400'
+                }`}
               ></div>
             </button>
           </div>
 
           <div
-            className={`grid gap-4 lg:h-[500px] xl:h-[650px] 2xl:h-[750px] transition-all duration-300 ease-in-out ${isEpisodeSelectorCollapsed
-              ? 'grid-cols-1'
-              : 'grid-cols-1 md:grid-cols-4'
-              }`}
+            className={`grid gap-4 lg:h-[500px] xl:h-[650px] 2xl:h-[750px] transition-all duration-300 ease-in-out ${
+              isEpisodeSelectorCollapsed
+                ? 'grid-cols-1'
+                : 'grid-cols-1 md:grid-cols-4'
+            }`}
           >
             {/* 播放器 */}
             <div
-              className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
-                }`}
+              className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${
+                isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
+              }`}
             >
               <div className='relative w-full h-[300px] lg:h-full'>
                 <div
@@ -2217,10 +2349,11 @@ function PlayPageClient() {
 
             {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
             <div
-              className={`h-[300px] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${isEpisodeSelectorCollapsed
-                ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
-                : 'md:col-span-1 lg:opacity-100 lg:scale-100'
-                }`}
+              className={`h-[300px] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${
+                isEpisodeSelectorCollapsed
+                  ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
+                  : 'md:col-span-1 lg:opacity-100 lg:scale-100'
+              }`}
             >
               <EpisodeSelector
                 totalEpisodes={totalEpisodes}
