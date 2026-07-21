@@ -83,7 +83,7 @@ export function builtInFilterAds(type: string, m3u8Content: string): string {
       'report.meituan.com',
       'analytics.meituan.com',
       'stat.mafengwo.cn',
-      // 博彩 / 色情广告（聚合站常见）
+      // 博彩 / 色情广告（聚合站常见 —— 持续补充新域名）
       '.bet.',
       '.casino.',
       '.slot.',
@@ -94,6 +94,10 @@ export function builtInFilterAds(type: string, m3u8Content: string): string {
       'tt3418.com',
       'loot4.com',
       'adcore.cn',
+      // 截图实捕域名（开元棋牌/PG电子等赌博前贴）
+      '681215.com',
+      '481432.com',
+      '847562.com',
       // 国内常见广告 CDN
       'adcdn.xyz',
       'adplayer.pro',
@@ -164,6 +168,12 @@ export function builtInFilterAds(type: string, m3u8Content: string): string {
       'cpzy',
       '7607558',
       '71044377',
+      // 截图实捕（开元棋牌/PG电子）
+      '681215',
+      '481432',
+      '847562',
+      // 通用数字域名赌博模式（5-7位纯数字.com/.top/.cc/.app）
+      // 注意：不在此处做正则，由调用方按需扩展
     ];
 
     const isAdUrl = (u: string): boolean => {
@@ -173,6 +183,17 @@ export function builtInFilterAds(type: string, m3u8Content: string): string {
       }
       for (let j = 0; j < AD_KEYWORDS.length; j++) {
         if (low.includes(AD_KEYWORDS[j])) return true;
+      }
+      // 通用检测：纯数字域名（博彩广告网常用 5-8 位数字域名）
+      try {
+        const host = new URL(u).hostname.toLowerCase();
+        // 匹配纯数字 + 常见广告 TLD（.com/.top/.cc/.app/.xyz/.win）
+        if (/^\d{4,8}\.(com|top|cc|app|xyz|win|fun|live|pro)$/.test(host)) {
+          // 排除已知合法 CDN（如 cdn.yzzy31-play.com 这类含字母的不受影响）
+          return true;
+        }
+      } catch {
+        /* ignore */
       }
       return false;
     };
