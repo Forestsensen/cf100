@@ -2,14 +2,15 @@
 
 import { NextResponse } from 'next/server';
 
-import { getConfig } from '@/lib/config';
-import { buildUpstreamHeaders, getBaseUrl, resolveUrl } from '@/lib/live';
-import { proxyErrorResponse, upstreamErrorStatus } from '@/lib/proxyError';
 import {
   AD_DOMAINS,
+  AD_KEYWORDS,
   DEAD_CDN_DOMAINS,
   DIRECT_HOST_KEYWORDS,
 } from '@/lib/ad-rules';
+import { getConfig } from '@/lib/config';
+import { buildUpstreamHeaders, getBaseUrl, resolveUrl } from '@/lib/live';
+import { proxyErrorResponse, upstreamErrorStatus } from '@/lib/proxyError';
 
 export const runtime = 'edge';
 
@@ -19,15 +20,24 @@ function isDirectHost(hostname: string): boolean {
 }
 
 /**
- * 检测一行是否为广告片段 URL（保守策略，只匹配确定的广告）
+ * 检测一行是否为广告片段 URL（精确域名 + 关键字子串匹配）
  */
 function isAdSegmentUrl(line: string): boolean {
   try {
     const url = new URL(line);
     const hostname = url.hostname.toLowerCase();
+    const href = url.href.toLowerCase();
+
     // 精确匹配广告域名
     for (const domain of AD_DOMAINS) {
       if (hostname === domain || hostname.endsWith('.' + domain)) {
+        return true;
+      }
+    }
+
+    // 关键字子串匹配（URL 路径/参数中的广告特征）
+    for (const kw of AD_KEYWORDS) {
+      if (href.includes(kw)) {
         return true;
       }
     }
@@ -87,12 +97,67 @@ function isAdEndMarker(line: string): boolean {
 
 /**
  * 过滤 M3U8 中的广告片段
+ *
+ * 策略（按优先级）：
+ *   1) CUE-OUT/IN / SCTE35 广告标记块 → 整块跳过
+ *   2) 已知广告域名（AD_DOMAINS 精确匹配）
+ *   3) 广告关键字子串匹配（AD_KEYWORDS，URL 路径/参数）
+ *   4) 死链 CDN 域名（DEAD_CDN_DOMAINS）
+ *   5) Host-divergence：非主用 host 的分片 → 判定为前贴/中插广告
+ *   6) 前贴检测：首段时长显著长于平均且段数少 → 可疑前贴
  */
 function filterAdsFromM3U8(content: string): string {
   const lines = content.split('\n');
   const result: string[] = [];
   let inAdBlock = false;
   let removedSegments = 0;
+
+  // ---- 统计主用 CDN（host-divergence 需要）----
+  const hostCount: Record<string, number> = {};
+  for (const line of lines) {
+    const s = line.trim();
+    if (s && !s.startsWith('#')) {
+      try {
+        const h = new URL(s).hostname.toLowerCase();
+        if (h) hostCount[h] = (hostCount[h] || 0) + 1;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  let mainHost = '';
+  let maxCount = 0;
+  for (const [h, c] of Object.entries(hostCount)) {
+    if (c > maxCount) {
+      maxCount = c;
+      mainHost = h;
+    }
+  }
+
+  // ---- 收集所有 EXTINF+URL 段信息（前贴检测需要）----
+  interface SegInfo {
+    dur: number;
+    urlIdx: number;
+  }
+  const segments: SegInfo[] = [];
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (/^#EXT[-X]?INF:/i.test(lines[i].trim())) {
+      const m = lines[i].match(/#EXT[-X]?INF:([\d.]+)/i);
+      const dur = m ? parseFloat(m[1]) : 0;
+      const nxt = lines[i + 1]?.trim() || '';
+      if (nxt && !nxt.startsWith('#')) segments.push({ dur, urlIdx: i + 1 });
+    }
+  }
+
+  // 前贴启发式：段数少 + 首段明显偏长
+  const isLikelyPreRoll =
+    segments.length >= 2 &&
+    segments.length <= 20 &&
+    segments[0].dur >= 45 &&
+    segments.length > 1 &&
+    segments[0].dur > (segments[1].dur || 0) * 2;
+
+  let preRollSkipped = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -112,9 +177,7 @@ function filterAdsFromM3U8(content: string): string {
     }
 
     // 在广告块内，跳过
-    if (inAdBlock) {
-      continue;
-    }
+    if (inAdBlock) continue;
 
     // 检测独立广告片段 URL 或死链 CDN 节点
     if (
@@ -133,11 +196,56 @@ function filterAdsFromM3U8(content: string): string {
       continue;
     }
 
+    // Host-divergence：来自非主用 host 的分片 → 广告
+    if (
+      trimmed &&
+      !trimmed.startsWith('#') &&
+      mainHost &&
+      maxCount >= 3 // 至少有 3 个分片才做 divergence（避免单段误判）
+    ) {
+      try {
+        const segHost = new URL(trimmed).hostname.toLowerCase();
+        if (segHost && segHost !== mainHost) {
+          // 跳过前一行的 #EXTINF
+          if (
+            result.length > 0 &&
+            result[result.length - 1].trim().startsWith('#EXTINF')
+          ) {
+            result.pop();
+          }
+          removedSegments++;
+          continue;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // 前贴检测（仅对第一段 EXTINF+URL 生效一次）
+    if (
+      trimmed &&
+      /^#EXT[-X]?INF:/i.test(trimmed) &&
+      isLikelyPreRoll &&
+      !preRollSkipped
+    ) {
+      const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
+      if (nextLine && !nextLine.startsWith('#')) {
+        // 跳过这对 EXTINF+URL
+        preRollSkipped = true;
+        removedSegments++;
+        i++; // 多跳一行 URL
+        continue;
+      }
+    }
+
     result.push(line);
   }
 
   if (removedSegments > 0) {
-    console.log(`[AdBlock] 已移除 ${removedSegments} 个广告/死链片段`);
+    console.log(
+      `[AdBlock] 已移除 ${removedSegments} 个广告/死链片段 ` +
+        `(mainHost=${mainHost}, hostDiv=true, preRoll=${preRollSkipped})`
+    );
   }
 
   return result.join('\n');

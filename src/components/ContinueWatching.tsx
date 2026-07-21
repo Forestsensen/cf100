@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { PlayRecord } from '@/lib/db.client';
 import {
@@ -9,6 +9,7 @@ import {
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { useWatchingUpdates } from '@/hooks/useWatchingUpdates';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import VideoCard from '@/components/VideoCard';
@@ -22,6 +23,19 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
     (PlayRecord & { key: string })[]
   >([]);
   const [loading, setLoading] = useState(true);
+
+  // 获取更新集数数据（用于在卡片上显示「已更N」徽章）
+  const { updates: watchingUpdates } = useWatchingUpdates();
+
+  // 构建更新查找表：source+id → newEpisodes
+  const updateMap = useMemo(() => {
+    if (!watchingUpdates?.updatedSeries) return new Map<string, number>();
+    const map = new Map<string, number>();
+    for (const s of watchingUpdates.updatedSeries) {
+      map.set(`${s.sourceKey}+${s.videoId}`, s.newEpisodes);
+    }
+    return map;
+  }, [watchingUpdates]);
 
   // 处理播放记录数据更新的函数
   const updatePlayRecords = (allRecords: Record<string, PlayRecord>) => {
@@ -138,6 +152,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
                     currentEpisode={record.index}
                     query={record.search_title}
                     from='playrecord'
+                    newEpisodes={updateMap.get(record.key) || 0}
                     onDelete={() =>
                       setPlayRecords((prev) =>
                         prev.filter((r) => r.key !== record.key)
