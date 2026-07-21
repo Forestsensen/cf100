@@ -222,11 +222,10 @@ export function builtInFilterAds(type: string, m3u8Content: string): string {
       segments[0].dur >= preRollThreshold &&
       segments[0].dur > (segments[1].dur || 0) * 2;
 
-    if (
-      (type === 'iqiyi' || type === 'iqiyi_') &&
-      segments.length >= 2 &&
-      segments.length <= 20
-    ) {
+    // 爱奇艺源（source key 包含 iqiyi 即可，如 iqiyi / iqiyizyapi.com / iqiyi_ 等）
+    const isIqiyiSource =
+      typeof type === 'string' && type.indexOf('iqiyi') !== -1;
+    if (isIqiyiSource && segments.length >= 2 && segments.length <= 20) {
       let avgDur = 0;
       for (let ai = 0; ai < segments.length; ai++) avgDur += segments[ai].dur;
       avgDur /= segments.length;

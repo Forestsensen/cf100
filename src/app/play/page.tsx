@@ -2000,6 +2000,161 @@ function PlayPageClient() {
     };
   }, []);
 
+  // ====== DOM 层广告拦截（兜底防护）======
+  // 聚合源经常通过 iframe / div 覆盖层注入赌博广告
+  // m3u8 过滤只对分片级广告有效，DOM 层的必须用 JS 移除
+  useEffect(() => {
+    // 博彩/广告关键词（用于检测可疑元素）
+    const AD_KEYWORDS_DOM = [
+      '开元棋牌',
+      'PG电子',
+      '棋牌',
+      '彩票',
+      '百家乐',
+      '赌场',
+      '博彩',
+      '681215',
+      '481432',
+      '847562',
+      '7607558',
+      '71044377',
+      'xcvpn.app',
+      'xcvpn',
+      // 通用广告特征
+      '广告',
+    ];
+
+    const GAMBLING_DOMAIN_PATTERN =
+      /^\d{4,8}\.(com|top|cc|app|xyz|win|fun|live|pro|vip)$/;
+
+    /**
+     * 检测一个元素是否疑似广告（iframe/div 覆盖层）
+     */
+    function isAdElement(el: HTMLElement): boolean {
+      // 1. 检查标签名
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'iframe') {
+        const src = el.getAttribute('src') || '';
+        // iframe src 包含赌博域名或数字域名
+        if (GAMBLING_DOMAIN_PATTERN.test(src.replace(/^https?:\/\//, '')))
+          return true;
+        for (const kw of AD_KEYWORDS_DOM) {
+          if (src.includes(kw)) return true;
+        }
+        // 无 src 或 about:blank 的隐藏 iframe 高度可疑
+        if (!src || src === 'about:blank') {
+          const style = window.getComputedStyle(el);
+          if (
+            (style.position === 'absolute' || style.position === 'fixed') &&
+            parseInt(style.width || '0', 10) > 100 &&
+            parseInt(style.height || '0', 10) > 50
+          )
+            return true;
+        }
+      }
+
+      // 2. 检查 div/span 等覆盖层是否包含广告文字
+      if (tag === 'div' || tag === 'span' || tag === 'p' || tag === 'a') {
+        const text = (el.textContent || '').trim();
+        if (!text) return false;
+
+        // 包含多个博彩关键词 → 几乎确定是广告
+        let matchCount = 0;
+        for (const kw of AD_KEYWORDS_DOM) {
+          if (text.indexOf(kw) !== -1) matchCount++;
+        }
+        if (matchCount >= 2) return true;
+
+        // 单个强关键词 + 可疑样式
+        if (matchCount >= 1) {
+          const style = window.getComputedStyle(el);
+          const pos = style.position;
+          if (pos === 'absolute' || pos === 'fixed') {
+            const zIndex = parseInt(style.zIndex || '0', 10);
+            if (zIndex > 100) return true;
+          }
+        }
+      }
+
+      // 3. 检查内联样式中包含赌博 URL 的背景图
+      const bgStyle = el.getAttribute('style') || '';
+      for (const kw of ['681215', '481432', '847562']) {
+        if (bgStyle.indexOf(kw) !== -1) return true;
+      }
+
+      return false;
+    }
+
+    /** 移除单个广告元素 */
+    function removeAdElement(el: HTMLElement) {
+      try {
+        console.log(
+          '[DOM去广告] 移除:',
+          el.tagName,
+          el.className?.toString?.() || '',
+          (el.textContent || '').substring(0, 60)
+        );
+        el.remove();
+      } catch {
+        // 移除失败（可能已被移除）
+      }
+    }
+
+    /** 全量扫描一次 DOM */
+    function scanAndClean() {
+      // 扫描所有 iframe
+      document.querySelectorAll('iframe').forEach((el) => {
+        if (isAdElement(el as HTMLIFrameElement))
+          removeAdElement(el as HTMLElement);
+      });
+
+      // 扫描所有绝对定位 / 固定定位的可疑元素
+      document.querySelectorAll('div, span, p, a, img').forEach((el) => {
+        const htmlEl = el as HTMLElement;
+        const style = window.getComputedStyle(htmlEl);
+        if (
+          (style.position === 'absolute' || style.position === 'fixed') &&
+          isAdElement(htmlEl)
+        ) {
+          removeAdElement(htmlEl);
+        }
+      });
+    }
+
+    // 初始扫描（延迟执行，等页面渲染完）
+    const initialTimer = setTimeout(scanAndClean, 1500);
+
+    // 定时扫描（每 2 秒扫一次）
+    const intervalId = setInterval(scanAndClean, 2000);
+
+    // MutationObserver 监听新增节点
+    let observer: MutationObserver | null = null;
+    try {
+      observer = new MutationObserver((mutations) => {
+        let hasNewNodes = false;
+        for (const m of mutations) {
+          if (m.addedNodes.length > 0) {
+            hasNewNodes = true;
+            break;
+          }
+        }
+        if (hasNewNodes) {
+          // 延迟一点让广告脚本完成插入
+          setTimeout(scanAndClean, 100);
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {
+      console.warn('[DOM去广告] MutationObserver 创建失败:', e);
+    }
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(intervalId);
+      if (observer) observer.disconnect();
+    };
+  }, []);
+
   if (loading) {
     return (
       <PageLayout activePath='/play'>
