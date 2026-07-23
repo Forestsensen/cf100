@@ -574,9 +574,10 @@ export async function savePlayRecord(
 ): Promise<void> {
   const key = generateStorageKey(source, id);
 
-  // ---- original_episodes 基线维护（对齐 ergTV-main）----
+  // ---- original_episodes 基线维护 ----
   // 1) 确保 original_episodes 有值：优先级 传入值 > 现有记录值 > 当前 total_episodes
-  // 2) 用户观看超过基线集数后推进基线，避免“更新提醒”卡死
+  // 2) 用户观看到超过基线的集数后，把基线推进到当前观看集数，
+  //    让"已更N"表示"当前进度之后还有 N 集未看"，而不是"自首次观看以来新增 N 集"。
   const existingRecords = cacheManager.getCachedPlayRecords() || {};
   const existingRecord = existingRecords[key];
 
@@ -587,14 +588,16 @@ export async function savePlayRecord(
         : record.total_episodes;
   }
 
-  if (existingRecord?.original_episodes && existingRecord.original_episodes > 0) {
+  if (
+    existingRecord?.original_episodes &&
+    existingRecord.original_episodes > 0
+  ) {
     const baseline = existingRecord.original_episodes;
     const watchedBeyond = record.index > baseline;
     const significant = record.play_time > 60; // 观看超过1分钟才算实质性进展
     if (watchedBeyond && significant) {
-      const latest = Math.max(record.total_episodes, baseline);
-      record.original_episodes = latest;
-      record.total_episodes = latest;
+      // 基线推进到当前观看集数（1-based），保留 total_episodes 不变
+      record.original_episodes = record.index;
     }
   }
   // --------------------------------------------------
@@ -1384,7 +1387,7 @@ export function subscribeToDataUpdates<T>(
   callback: (data: T) => void
 ): () => void {
   if (typeof window === 'undefined') {
-    return () => { };
+    return () => {};
   }
 
   const handleUpdate = (event: CustomEvent) => {
