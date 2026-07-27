@@ -2133,7 +2133,7 @@ function PlayPageClient() {
     try {
       ob = new MutationObserver((mutations) => {
         for (const m of mutations) {
-          for (const node of m.addedNodes) {
+          m.addedNodes.forEach((node) => {
             if (node.nodeType === Node.ELEMENT_NODE) {
               const e = node as HTMLElement;
               if (isAd(e)) kill(e);
@@ -2145,7 +2145,7 @@ function PlayPageClient() {
                 /* ignore */
               }
             }
-          }
+          });
         }
       });
       ob.observe(document.body, {
