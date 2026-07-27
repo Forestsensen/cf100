@@ -73,6 +73,7 @@ export class D1Storage implements IStorage {
         year: result.year,
         index: result.index_episode,
         total_episodes: result.total_episodes,
+        original_episodes: result.original_episodes || undefined,
         play_time: result.play_time,
         total_time: result.total_time,
         save_time: result.save_time,
@@ -91,12 +92,20 @@ export class D1Storage implements IStorage {
   ): Promise<void> {
     try {
       const db = await this.getDatabase();
+      // 确保原始集数列存在（兼容旧表）
+      try {
+        await db.exec(
+          `ALTER TABLE play_records ADD COLUMN original_episodes INTEGER`
+        );
+      } catch {
+        /* 列已存在则忽略 */
+      }
       await db
         .prepare(
           `
           INSERT OR REPLACE INTO play_records 
-          (username, key, title, source_name, cover, year, index_episode, total_episodes, play_time, total_time, save_time, search_title)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (username, key, title, source_name, cover, year, index_episode, total_episodes, original_episodes, play_time, total_time, save_time, search_title)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
         )
         .bind(
@@ -108,6 +117,7 @@ export class D1Storage implements IStorage {
           record.year,
           record.index,
           record.total_episodes,
+          record.original_episodes || null,
           record.play_time,
           record.total_time,
           record.save_time,
@@ -142,6 +152,7 @@ export class D1Storage implements IStorage {
           year: row.year,
           index: row.index_episode,
           total_episodes: row.total_episodes,
+          original_episodes: row.original_episodes || undefined,
           play_time: row.play_time,
           total_time: row.total_time,
           save_time: row.save_time,
