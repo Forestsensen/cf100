@@ -2,12 +2,7 @@
 
 import { NextResponse } from 'next/server';
 
-import {
-  AD_DOMAINS,
-  AD_KEYWORDS,
-  DEAD_CDN_DOMAINS,
-  DIRECT_HOST_KEYWORDS,
-} from '@/lib/ad-rules';
+import { DIRECT_HOST_KEYWORDS } from '@/lib/ad-rules';
 import { getConfig } from '@/lib/config';
 import { buildUpstreamHeaders, getBaseUrl, resolveUrl } from '@/lib/live';
 import { proxyErrorResponse, upstreamErrorStatus } from '@/lib/proxyError';
@@ -20,316 +15,61 @@ function isDirectHost(hostname: string): boolean {
 }
 
 /**
- * 检测一行是否为广告片段 URL（精确域名 + 关键字子串匹配）
- */
-function isAdSegmentUrl(line: string): boolean {
-  try {
-    const url = new URL(line);
-    const hostname = url.hostname.toLowerCase();
-    const href = url.href.toLowerCase();
-
-    // 精确匹配广告域名
-    for (const domain of AD_DOMAINS) {
-      if (hostname === domain || hostname.endsWith('.' + domain)) {
-        return true;
-      }
-    }
-
-    // 关键字子串匹配（URL 路径/参数中的广告特征）
-    for (const kw of AD_KEYWORDS) {
-      if (href.includes(kw)) {
-        return true;
-      }
-    }
-  } catch {
-    // URL 解析失败，不认为是广告
-  }
-  return false;
-}
-
-/**
- * 检测一行是否为死链/防盗链 CDN 节点（精确匹配，跳过避免播放中断）
- */
-function isDeadCdnUrl(line: string): boolean {
-  try {
-    const url = new URL(line);
-    const hostname = url.hostname.toLowerCase();
-    for (const domain of DEAD_CDN_DOMAINS) {
-      if (hostname === domain || hostname.endsWith('.' + domain)) {
-        return true;
-      }
-    }
-  } catch {
-    // URL 解析失败，不认为是死链
-  }
-  return false;
-}
-
-/**
- * 检测广告起始标记
- */
-function isAdStartMarker(line: string): boolean {
-  if (line.startsWith('#EXT-X-CUE-OUT')) return true;
-  if (line.startsWith('#EXT-X-SCTE35')) return true;
-  if (line.startsWith('#EXT-X-SCTE-OUT')) return true;
-  if (
-    line.startsWith('#EXT-X-DATERANGE') &&
-    (line.includes('CLASS="ad"') ||
-      line.includes('CLASS="commercial"') ||
-      line.includes('SCTE35-OUT'))
-  ) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * 检测广告结束标记
- */
-function isAdEndMarker(line: string): boolean {
-  if (line.startsWith('#EXT-X-CUE-IN')) return true;
-  if (line.startsWith('#EXT-X-SCTE-IN')) return true;
-  if (line.startsWith('#EXT-X-DATERANGE') && line.includes('SCTE35-IN')) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * 前贴广告预检测：基于首个 #EXT-X-DISCONTINUITY 之前的分片块。
+ * 过滤 M3U8 中的广告片段（保守关键字策略，对齐 ergTV-main 默认规则）
  *
- * 聚合源（爱奇艺等）普遍用 DISCONTINUITY 拼接前贴广告：广告段位于首个
- * DISCONTINUITY 之前。只要该块像是广告（总时长足够 / 命中广告 URL / host 发散），
- * 整块前置分片移除。注意：不删除 DISCONTINUITY 标记本身，避免 A/V 不同步。
- */
-function computePreRollRemoval(lines: string[], mainHost: string): Set<number> {
-  const remove = new Set<number>();
-  let discIdx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === '#EXT-X-DISCONTINUITY') {
-      discIdx = i;
-      break;
-    }
-  }
-  if (discIdx === -1) return remove;
-
-  interface PreSeg {
-    extIdx: number;
-    urlIdx: number;
-    url: string;
-  }
-  const segs: PreSeg[] = [];
-  for (let i = 0; i < discIdx; i++) {
-    if (/^#EXT[-X]?INF:/i.test(lines[i].trim())) {
-      const nxt = i + 1 < lines.length ? lines[i + 1].trim() : '';
-      if (nxt && !nxt.startsWith('#')) {
-        segs.push({ extIdx: i, urlIdx: i + 1, url: nxt });
-      }
-    }
-  }
-  if (segs.length < 2) return remove; // 单段不构成前贴块
-
-  let totalDur = 0;
-  for (const s of segs) {
-    const m = lines[s.extIdx].match(/#EXT[-X]?INF:([\d.]+)/i);
-    totalDur += m ? parseFloat(m[1]) : 0;
-  }
-
-  let looksAd = totalDur >= 30;
-  if (!looksAd && mainHost) {
-    for (const s of segs) {
-      try {
-        const hh = new URL(s.url).hostname.toLowerCase();
-        if (hh && hh !== mainHost) {
-          looksAd = true;
-          break;
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-  if (!looksAd) {
-    for (const s of segs) {
-      if (isAdSegmentUrl(s.url)) {
-        looksAd = true;
-        break;
-      }
-    }
-  }
-
-  if (looksAd) {
-    for (const s of segs) {
-      remove.add(s.extIdx);
-      remove.add(s.urlIdx);
-    }
-  }
-  return remove;
-}
-
-/**
- * 过滤 M3U8 中的广告片段
- *
- * 策略（按优先级）：
- *   1) CUE-OUT/IN / SCTE35 广告标记块 → 整块跳过
- *   2) 已知广告域名（AD_DOMAINS 精确匹配）
- *   3) 广告关键字子串匹配（AD_KEYWORDS，URL 路径/参数）
- *   4) 死链 CDN 域名（DEAD_CDN_DOMAINS）
- *   5) Host-divergence：非主用 host 的分片 → 判定为前贴/中插广告
- *   6) 前贴检测：首段时长显著长于平均且段数少 → 可疑前贴
+ * 仅删除「URL 含广告关键字」的片段，跳过 #EXT-X-DISCONTINUITY 标识（不删相邻内容）。
+ * 不做 host-divergence / 前贴时长 / 死链 CDN 等启发式判定，避免误删正片。
  */
 function filterAdsFromM3U8(content: string): string {
+  if (!content) return '';
+
+  // 广告关键字列表（对齐 ergTV-main 默认规则）
+  const adKeywords = [
+    'sponsor',
+    '/ad/',
+    '/ads/',
+    'advert',
+    'advertisement',
+    '/adjump',
+    'redtraffic',
+  ];
+
+  // 按行分割 M3U8 内容
   const lines = content.split('\n');
-  const result: string[] = [];
-  let inAdBlock = false;
-  let removedSegments = 0;
+  const filteredLines: string[] = [];
 
-  // ---- 统计主用 CDN（host-divergence 需要）----
-  const hostCount: Record<string, number> = {};
-  for (const line of lines) {
-    const s = line.trim();
-    if (s && !s.startsWith('#')) {
-      try {
-        const h = new URL(s).hostname.toLowerCase();
-        if (h) hostCount[h] = (hostCount[h] || 0) + 1;
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-  let mainHost = '';
-  let maxCount = 0;
-  for (const [h, c] of Object.entries(hostCount)) {
-    if (c > maxCount) {
-      maxCount = c;
-      mainHost = h;
-    }
-  }
-
-  // ---- 前贴广告预检测：首个 DISCONTINUITY 之前的块（多段前贴也能拦）----
-  const preRollRemoval = computePreRollRemoval(lines, mainHost);
-
-  // ---- 收集所有 EXTINF+URL 段信息（前贴检测需要）----
-  interface SegInfo {
-    dur: number;
-    urlIdx: number;
-  }
-  const segments: SegInfo[] = [];
-  for (let i = 0; i < lines.length - 1; i++) {
-    if (/^#EXT[-X]?INF:/i.test(lines[i].trim())) {
-      const m = lines[i].match(/#EXT[-X]?INF:([\d.]+)/i);
-      const dur = m ? parseFloat(m[1]) : 0;
-      const nxt = lines[i + 1]?.trim() || '';
-      if (nxt && !nxt.startsWith('#')) segments.push({ dur, urlIdx: i + 1 });
-    }
-  }
-
-  // 前贴启发式：段数少 + 首段明显偏长
-  const isLikelyPreRoll =
-    segments.length >= 2 &&
-    segments.length <= 20 &&
-    segments[0].dur >= 45 &&
-    segments.length > 1 &&
-    segments[0].dur > (segments[1].dur || 0) * 2;
-
-  let preRollSkipped = false;
-
-  for (let i = 0; i < lines.length; i++) {
+  let i = 0;
+  while (i < lines.length) {
     const line = lines[i];
-    const trimmed = line.trim();
 
-    // 前贴预检测：跳过首个 DISCONTINUITY 之前的广告分片
-    if (preRollRemoval.has(i)) {
+    // 跳过 #EXT-X-DISCONTINUITY 标识（不删除相邻分片，避免 A/V 不同步）
+    if (line.includes('#EXT-X-DISCONTINUITY')) {
       i++;
       continue;
     }
 
-    // 广告起始标记
-    if (isAdStartMarker(trimmed)) {
-      inAdBlock = true;
-      removedSegments++;
-      continue;
-    }
+    // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
+    if (line.includes('#EXTINF:')) {
+      if (i + 1 < lines.length) {
+        const nextLine = lines[i + 1];
+        const containsAdKeyword = adKeywords.some((keyword) =>
+          nextLine.toLowerCase().includes(keyword.toLowerCase())
+        );
 
-    // 广告结束标记
-    if (isAdEndMarker(trimmed)) {
-      inAdBlock = false;
-      continue;
-    }
-
-    // 在广告块内，跳过
-    if (inAdBlock) continue;
-
-    // 检测独立广告片段 URL 或死链 CDN 节点
-    if (
-      trimmed &&
-      !trimmed.startsWith('#') &&
-      (isAdSegmentUrl(trimmed) || isDeadCdnUrl(trimmed))
-    ) {
-      // 跳过前一行的 #EXTINF
-      if (
-        result.length > 0 &&
-        result[result.length - 1].trim().startsWith('#EXTINF')
-      ) {
-        result.pop();
-      }
-      removedSegments++;
-      continue;
-    }
-
-    // Host-divergence：来自非主用 host 的分片 → 广告
-    if (
-      trimmed &&
-      !trimmed.startsWith('#') &&
-      mainHost &&
-      maxCount >= 3 // 至少有 3 个分片才做 divergence（避免单段误判）
-    ) {
-      try {
-        const segHost = new URL(trimmed).hostname.toLowerCase();
-        if (segHost && segHost !== mainHost) {
-          // 跳过前一行的 #EXTINF
-          if (
-            result.length > 0 &&
-            result[result.length - 1].trim().startsWith('#EXTINF')
-          ) {
-            result.pop();
-          }
-          removedSegments++;
+        if (containsAdKeyword) {
+          // 跳过 EXTINF 行和 URL 行
+          i += 2;
           continue;
         }
-      } catch {
-        /* ignore */
       }
     }
 
-    // 前贴检测（仅对第一段 EXTINF+URL 生效一次）
-    if (
-      trimmed &&
-      /^#EXT[-X]?INF:/i.test(trimmed) &&
-      isLikelyPreRoll &&
-      !preRollSkipped
-    ) {
-      const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
-      if (nextLine && !nextLine.startsWith('#')) {
-        // 跳过这对 EXTINF+URL
-        preRollSkipped = true;
-        removedSegments++;
-        i++; // 多跳一行 URL
-        continue;
-      }
-    }
-
-    result.push(line);
+    // 保留当前行
+    filteredLines.push(line);
+    i++;
   }
 
-  if (removedSegments > 0) {
-    console.log(
-      `[AdBlock] 已移除 ${removedSegments} 个广告/死链片段 ` +
-        `(mainHost=${mainHost}, hostDiv=true, preRoll=${preRollSkipped})`
-    );
-  }
-
-  return result.join('\n');
+  return filteredLines.join('\n');
 }
 
 export async function GET(request: Request) {
