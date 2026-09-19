@@ -26,7 +26,7 @@ async function searchWithCache(
   query: string,
   page: number,
   url: string,
-  timeoutMs = 2000
+  timeoutMs = DEFAULT_SEARCH_TIMEOUT_MS
 ): Promise<{ results: SearchResult[]; pageCount?: number }> {
   // 先查缓存
   const cached = await getCachedSearchPage(apiSite.key, query, page);
@@ -126,16 +126,28 @@ async function searchWithCache(
     });
 
     // 过滤掉集数为 0 的结果
-    const results = allResults.filter((result: SearchResult) => result.episodes.length > 0);
+    const results = allResults.filter(
+      (result: SearchResult) => result.episodes.length > 0
+    );
 
     const pageCount = page === 1 ? data.pagecount || 1 : undefined;
     // 写入缓存（成功）
-    await setCachedSearchPage(apiSite.key, query, page, 'ok', results, pageCount);
+    await setCachedSearchPage(
+      apiSite.key,
+      query,
+      page,
+      'ok',
+      results,
+      pageCount
+    );
     return { results, pageCount };
   } catch (error: any) {
     clearTimeout(timeoutId);
     // 识别被 AbortController 中止（超时）
-    const aborted = error?.name === 'AbortError' || error?.code === 20 || error?.message?.includes('aborted');
+    const aborted =
+      error?.name === 'AbortError' ||
+      error?.code === 20 ||
+      error?.message?.includes('aborted');
     if (aborted) {
       await setCachedSearchPage(apiSite.key, query, page, 'timeout', []);
     }
@@ -153,7 +165,13 @@ export async function searchFromApi(
       apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
 
     // 使用新的缓存搜索函数处理第一页
-    const firstPageResult = await searchWithCache(apiSite, query, 1, apiUrl, 2000);
+    const firstPageResult = await searchWithCache(
+      apiSite,
+      query,
+      1,
+      apiUrl,
+      DEFAULT_SEARCH_TIMEOUT_MS
+    );
     const results = firstPageResult.results;
     const pageCountFromFirst = firstPageResult.pageCount;
 
@@ -178,7 +196,13 @@ export async function searchFromApi(
 
         const pagePromise = (async () => {
           // 使用新的缓存搜索函数处理分页
-          const pageResult = await searchWithCache(apiSite, query, page, pageUrl, 2000);
+          const pageResult = await searchWithCache(
+            apiSite,
+            query,
+            page,
+            pageUrl,
+            DEFAULT_SEARCH_TIMEOUT_MS
+          );
           return pageResult.results;
         })();
 
@@ -205,13 +229,33 @@ export async function searchFromApi(
 // 匹配 m3u8 链接的正则
 const M3U8_PATTERN = /(https?:\/\/[^"'\s]+?\.m3u8)/g;
 
+// 明确需要 HTML 抓取的「特殊源」白名单。
+// 只有这里列出的 key 才会跳过标准 JSON API 去抓详情页；
+// 其余源一律优先走 JSON API（源配置里的 detail 字段只作为兜底提示，不再是开关）。
+const DETAIL_HTML_SOURCES = new Set<string>(['ffzy']);
+
+// 默认超时（毫秒）：实测国内源详情响应 1.3~2.5s，2s 会把电影天堂/爱奇艺这类
+// 稍慢但完全可用的源误杀（表现为「有的网站获取不了集数」）。
+const DEFAULT_SEARCH_TIMEOUT_MS = 6000;
+const DEFAULT_DETAIL_TIMEOUT_MS = 6000;
+
 export async function getDetailFromApi(
   apiSite: ApiSite,
   id: string,
-  timeoutMs = 2000
+  timeoutMs = DEFAULT_DETAIL_TIMEOUT_MS
 ): Promise<SearchResult> {
-  if (apiSite.detail) {
-    return handleSpecialSourceDetail(id, apiSite, timeoutMs);
+  // 仅白名单内的特殊源走 HTML 抓取；其余源优先标准 JSON API
+  if (apiSite.detail && DETAIL_HTML_SOURCES.has(apiSite.key)) {
+    try {
+      return await handleSpecialSourceDetail(id, apiSite, timeoutMs);
+    } catch (err) {
+      // HTML 抓取失败时回落到 JSON API，避免整源不可用
+      // eslint-disable-next-line no-console
+      console.warn(
+        `特殊源 HTML 详情失败，回落 JSON API (${apiSite.key}):`,
+        (err as Error).message
+      );
+    }
   }
 
   const detailUrl = `${apiSite.api}${API_CONFIG.detail.path}${id}`;
@@ -227,8 +271,15 @@ export async function getDetailFromApi(
     });
   } catch (err: any) {
     clearTimeout(timeoutId);
-    const aborted = err?.name === 'AbortError' || err?.code === 20 || err?.message?.includes('aborted');
-    throw new Error(aborted ? `详情请求超时 (2s): ${apiSite.key}` : `详情请求失败: ${err.message}`);
+    const aborted =
+      err?.name === 'AbortError' ||
+      err?.code === 20 ||
+      err?.message?.includes('aborted');
+    throw new Error(
+      aborted
+        ? `详情请求超时 (2s): ${apiSite.key}`
+        : `详情请求失败: ${err.message}`
+    );
   }
 
   clearTimeout(timeoutId);
@@ -262,7 +313,8 @@ export async function getDetailFromApi(
   // 源站真实总集数（vod_total），优先于解析出的 episodes.length（O4）
   let totalEpisodes = 0;
   const vtRaw = (videoDetail as any).vod_total;
-  const vtNum = typeof vtRaw === 'number' ? vtRaw : parseInt(vtRaw as string, 10);
+  const vtNum =
+    typeof vtRaw === 'number' ? vtRaw : parseInt(vtRaw as string, 10);
   if (!isNaN(vtNum) && vtNum > 0) {
     totalEpisodes = vtNum;
   }
@@ -321,7 +373,7 @@ export async function getDetailFromApi(
 async function handleSpecialSourceDetail(
   id: string,
   apiSite: ApiSite,
-  timeoutMs = 2000
+  timeoutMs = DEFAULT_DETAIL_TIMEOUT_MS
 ): Promise<SearchResult> {
   const detailUrl = `${apiSite.detail}/index.php/vod/detail/id/${id}.html`;
 
@@ -336,8 +388,15 @@ async function handleSpecialSourceDetail(
     });
   } catch (err: any) {
     clearTimeout(timeoutId);
-    const aborted = err?.name === 'AbortError' || err?.code === 20 || err?.message?.includes('aborted');
-    throw new Error(aborted ? `特殊源详情超时 (2s): ${apiSite.key}` : `特殊源详情请求失败: ${err.message}`);
+    const aborted =
+      err?.name === 'AbortError' ||
+      err?.code === 20 ||
+      err?.message?.includes('aborted');
+    throw new Error(
+      aborted
+        ? `特殊源详情超时 (2s): ${apiSite.key}`
+        : `特殊源详情请求失败: ${err.message}`
+    );
   }
 
   clearTimeout(timeoutId);
