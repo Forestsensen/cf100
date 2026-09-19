@@ -81,9 +81,6 @@ export const AD_KEYWORDS: string[] = [
   'preroll',
   'midroll',
   'postroll',
-  // 广告追踪像素
-  '.gif?',
-  '.png?ad',
   // 广告 CDN 域名（子串）
   'doubleclick',
   'googlesyndication',

@@ -119,10 +119,13 @@ function PlayPageClient() {
         const version =
           (window as any).RUNTIME_CONFIG?.CUSTOM_AD_FILTER_VERSION || 0;
 
+        // 版本号为 0 表示「后台没配过代码」，此时不需要自定义代码。
+        // 注意：这里不再清空 localStorage 后 return ——
+        // 若后台刚配置了代码而版本号尚未刷新，清缓存会导致本次播放丢失去广告。
         if (version === 0) {
-          localStorage.removeItem('customAdFilterCode');
-          localStorage.removeItem('customAdFilterVersion');
-          setCustomAdFilterCode('');
+          if (!cachedCode) {
+            setCustomAdFilterCode('');
+          }
           return;
         }
 

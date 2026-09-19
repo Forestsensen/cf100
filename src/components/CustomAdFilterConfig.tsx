@@ -12,9 +12,15 @@ interface CustomAdFilterConfigProps {
   refreshConfig: () => Promise<void>;
 }
 
-const CustomAdFilterConfig = ({ config, refreshConfig }: CustomAdFilterConfigProps) => {
+const CustomAdFilterConfig = ({
+  config,
+  refreshConfig,
+}: CustomAdFilterConfigProps) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   const [filterSettings, setFilterSettings] = useState({
     customAdFilterCode: '',
@@ -38,6 +44,10 @@ const CustomAdFilterConfig = ({ config, refreshConfig }: CustomAdFilterConfigPro
   };
 
   // 保存配置
+  // 修复：保存时若代码内容有改动，自动递增版本号。
+  // 原实现需要手动改版本号，改了代码忘改版本号 → 前端永远读 localStorage 旧缓存
+  // （play/page.tsx: `if (!cachedVersion || parseInt(cachedVersion) !== version)`），
+  // 表现为「后台自定义去广告根本没用」。
   const handleSave = async () => {
     setIsLoading(true);
     try {
@@ -45,20 +55,30 @@ const CustomAdFilterConfig = ({ config, refreshConfig }: CustomAdFilterConfigPro
         throw new Error('配置未加载');
       }
 
+      const codeChanged =
+        (filterSettings.customAdFilterCode || '') !==
+        (config.SiteConfig?.CustomAdFilterCode || '');
+
+      // 代码有变则版本号至少 +1（用户手动填了更大的值则尊重用户值）
+      const currentVersion = config.SiteConfig?.CustomAdFilterVersion || 0;
+      const nextVersion = codeChanged
+        ? Math.max(currentVersion + 1, filterSettings.customAdFilterVersion)
+        : filterSettings.customAdFilterVersion;
+
       // 合并完整的 AdminConfig（参考 MoonTVPlus）
       const updatedConfig = {
         ...config,
         SiteConfig: {
           ...config.SiteConfig,
           CustomAdFilterCode: filterSettings.customAdFilterCode,
-          CustomAdFilterVersion: filterSettings.customAdFilterVersion,
-        }
+          CustomAdFilterVersion: nextVersion,
+        },
       };
 
       const response = await fetch('/api/admin/config', {
-        method: 'POST',  // 改为 POST
+        method: 'POST', // 改为 POST
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedConfig)  // 发送完整配置
+        body: JSON.stringify(updatedConfig), // 发送完整配置
       });
 
       if (!response.ok) {
@@ -66,7 +86,18 @@ const CustomAdFilterConfig = ({ config, refreshConfig }: CustomAdFilterConfigPro
         throw new Error(error.error || '保存失败');
       }
 
-      showMessage('success', '自定义去广告配置已保存');
+      // 同步本地状态，让输入框显示真实生效的版本号
+      setFilterSettings((prev) => ({
+        ...prev,
+        customAdFilterVersion: nextVersion,
+      }));
+
+      showMessage(
+        'success',
+        codeChanged
+          ? `自定义去广告配置已保存（版本号自动更新为 ${nextVersion}，浏览器将拉取新代码）`
+          : '自定义去广告配置已保存'
+      );
       await refreshConfig();
     } catch (error: any) {
       showMessage('error', error.message || '保存失败');
@@ -98,13 +129,13 @@ const CustomAdFilterConfig = ({ config, refreshConfig }: CustomAdFilterConfigPro
           ...config.SiteConfig,
           CustomAdFilterCode: '',
           CustomAdFilterVersion: 1,
-        }
+        },
       };
 
       const response = await fetch('/api/admin/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedConfig)
+        body: JSON.stringify(updatedConfig),
       });
 
       if (!response.ok) {
@@ -200,8 +231,23 @@ function filterAdsFromM3U8(type, m3u8Content) {
           <div className='text-sm text-blue-800 dark:text-blue-200'>
             <p className='font-medium mb-2'>使用说明：</p>
             <ul className='space-y-1 list-disc list-inside'>
-              <li>函数名必须为 <code className='px-1 py-0.5 bg-blue-100 dark:bg-blue-800 rounded'>filterAdsFromM3U8</code></li>
-              <li>接收两个参数：<code className='px-1 py-0.5 bg-blue-100 dark:bg-blue-800 rounded'>type</code>（播放源key）和 <code className='px-1 py-0.5 bg-blue-100 dark:bg-blue-800 rounded'>m3u8Content</code>（m3u8内容）</li>
+              <li>
+                函数名必须为{' '}
+                <code className='px-1 py-0.5 bg-blue-100 dark:bg-blue-800 rounded'>
+                  filterAdsFromM3U8
+                </code>
+              </li>
+              <li>
+                接收两个参数：
+                <code className='px-1 py-0.5 bg-blue-100 dark:bg-blue-800 rounded'>
+                  type
+                </code>
+                （播放源key）和{' '}
+                <code className='px-1 py-0.5 bg-blue-100 dark:bg-blue-800 rounded'>
+                  m3u8Content
+                </code>
+                （m3u8内容）
+              </li>
               <li>必须返回过滤后的 m3u8 内容字符串</li>
               <li>如果代码执行失败，将自动降级使用默认去广告规则</li>
               <li>修改代码后记得更新版本号，让浏览器刷新缓存</li>
@@ -219,10 +265,12 @@ function filterAdsFromM3U8(type, m3u8Content) {
           type='number'
           min='1'
           value={filterSettings.customAdFilterVersion}
-          onChange={(e) => setFilterSettings({
-            ...filterSettings,
-            customAdFilterVersion: parseInt(e.target.value) || 1
-          })}
+          onChange={(e) =>
+            setFilterSettings({
+              ...filterSettings,
+              customAdFilterVersion: parseInt(e.target.value) || 1,
+            })
+          }
           className='w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent'
           placeholder='1'
         />
@@ -238,7 +286,12 @@ function filterAdsFromM3U8(type, m3u8Content) {
             自定义代码
           </label>
           <button
-            onClick={() => setFilterSettings({ ...filterSettings, customAdFilterCode: defaultExample })}
+            onClick={() =>
+              setFilterSettings({
+                ...filterSettings,
+                customAdFilterCode: defaultExample,
+              })
+            }
             className='text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300'
           >
             载入示例代码
@@ -246,7 +299,12 @@ function filterAdsFromM3U8(type, m3u8Content) {
         </div>
         <textarea
           value={filterSettings.customAdFilterCode}
-          onChange={(e) => setFilterSettings({ ...filterSettings, customAdFilterCode: e.target.value })}
+          onChange={(e) =>
+            setFilterSettings({
+              ...filterSettings,
+              customAdFilterCode: e.target.value,
+            })
+          }
           className='w-full h-96 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none'
           placeholder={defaultExample}
         />
@@ -257,11 +315,13 @@ function filterAdsFromM3U8(type, m3u8Content) {
 
       {/* 消息提示 */}
       {message && (
-        <div className={`flex items-center gap-2 p-4 rounded-lg ${
-          message.type === 'success'
-            ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800'
-            : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800'
-        }`}>
+        <div
+          className={`flex items-center gap-2 p-4 rounded-lg ${
+            message.type === 'success'
+              ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800'
+              : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800'
+          }`}
+        >
           {message.type === 'success' ? (
             <CheckCircle className='w-5 h-5 shrink-0' />
           ) : (
