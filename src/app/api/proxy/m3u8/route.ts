@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { DIRECT_HOST_KEYWORDS } from '@/lib/ad-rules';
+import { PROXY_REQUIRED_KEYWORDS } from '@/lib/ad-rules';
 import { getConfig } from '@/lib/config';
 import { buildUpstreamHeaders, getBaseUrl, resolveUrl } from '@/lib/live';
 import { proxyErrorResponse, upstreamErrorStatus } from '@/lib/proxyError';
@@ -11,7 +11,13 @@ export const runtime = 'edge';
 
 function isDirectHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
-  return DIRECT_HOST_KEYWORDS.some((k) => h.includes(k));
+  // 默认直连：实测 10/10 个源的分片直连都比走 CF 代理快（平均 2.75s vs 5.30s），
+  // 且直连不消耗 CF 请求数（一集 300~800 个分片）。
+  // 仅「已知必须走代理」的 host 例外（见 ad-rules 的 PROXY_REQUIRED_KEYWORDS）。
+  if (PROXY_REQUIRED_KEYWORDS.some((k) => h.includes(k))) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -257,7 +263,8 @@ function rewriteM3U8Content(
       } catch {
         /* ignore */
       }
-      // 白名单内直连 CDN（国内直连快）；其余走 /segment 代理（CF 中继，解决直连慢）
+      // 默认直连 CDN（实测直连比 CF 中继快 10/10，且省 CF 请求数）；
+      // 仅 PROXY_REQUIRED_KEYWORDS 命中的 host 走 /segment 代理
       const proxyUrl = isDirectHost(host)
         ? resolvedUrl
         : `${proxyBase}/segment?url=${encodeURIComponent(resolvedUrl)}`;

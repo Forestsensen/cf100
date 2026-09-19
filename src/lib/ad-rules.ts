@@ -36,8 +36,24 @@ export const DEAD_CDN_DOMAINS: string[] = [
   'v10.ppqrrs.com',
 ];
 
-// 直连白名单：这些源的 TS/分片直连 CDN（国内直连快，省去 CF 中转、保白天高速）
-// 匹配方式 = 分片 URL 主机名包含以下关键字（覆盖其 API 与 CDN 域名）
+// 分片/子 m3u8 的「走向」策略（2026-09 实测后反转）
+//
+// 旧策略：白名单直连（DIRECT_HOST_KEYWORDS），其余全部走 CF /segment 代理。
+// 实测结论（10 个启用源 × 真实分片，见 probe_direct_vs_proxy.json）：
+//   直连更快 10/10   代理更快 0/10
+//   直连平均 2.75s   代理平均 5.30s（慢 93%）
+//   其中 2 个源（暴风 s3.bfllvip.com / 量子 v.lzcdn28.com）代理直接 404，直连 200
+//   10/10 源的分片响应都带 Access-Control-Allow-Origin，hls.js 浏览器可直连
+//   加密源（猫眼/速播）的 #EXT-X-KEY 也带 ACAO，key 直连可行
+// 另外直连不消耗 CF 请求数（一集 300~800 个分片），显著降低 Free 计划配额压力。
+//
+// 故反转为「默认直连」，仅下列「已知必须走代理」的 host 例外。
+// 注意：本列表当前为空 —— 未发现必须走代理的源；如后续某源直连失败，
+// 把其特征关键字加到这里即可（无需改动逻辑）。
+export const PROXY_REQUIRED_KEYWORDS: string[] = [];
+
+// 兼容保留：旧版直连白名单。现已不再作为判定依据（策略已反转为默认直连），
+// 保留导出避免其他引用点报错；新代码请勿使用。
 export const DIRECT_HOST_KEYWORDS: string[] = [
   'dytt', // 电影天堂（caiji.dyttzyapi.com / vip.dytt-tvs.com）
   'iqiyi', // 爱奇艺（iqiyizyapi.com）
