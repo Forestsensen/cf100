@@ -48,7 +48,7 @@ export async function GET(request: Request) {
         return new Response(cached.body, { status: cached.status, headers });
       }
       // 陈旧但可用：立即返回旧片，后台异步刷新（stale-while-revalidate）
-      revalidateInBackground(cache, cacheKey, decodedUrl, ua);
+      revalidateInBackground(cache, cacheKey, decodedUrl, ua, request);
       return new Response(cached.body, { status: cached.status, headers });
     }
   }
@@ -157,11 +157,15 @@ function revalidateInBackground(
   cache: any,
   cacheKey: Request,
   url: string,
-  ua: string
+  ua: string,
+  request: Request
 ) {
   const task = (async () => {
     try {
-      const fresh = await fetch(url, { headers: { 'User-Agent': ua } });
+      // 与主路径统一：透传 Referer/Origin（后台刷新原先只带 UA，写法不一致）
+      const fresh = await fetch(url, {
+        headers: buildUpstreamHeaders(request, url, ua),
+      });
       if (!fresh.ok) return;
       const cacheable = new Response(fresh.clone().body, {
         status: fresh.status,

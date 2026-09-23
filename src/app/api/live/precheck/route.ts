@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
+import { buildUpstreamHeaders } from '@/lib/live';
+import { proxyErrorResponse } from '@/lib/proxyError';
 
 export const runtime = 'edge';
 
@@ -24,17 +26,31 @@ export async function GET(request: NextRequest) {
   try {
     const decodedUrl = decodeURIComponent(url);
 
-    const response = await fetch(decodedUrl, {
-      cache: 'no-cache',
-      redirect: 'follow',
-      credentials: 'same-origin',
-      headers: {
-        'User-Agent': ua,
-      },
-    });
+    // 与 proxy/m3u8、proxy/segment 统一：透传 Referer/Origin（防盗链源站必需）
+    // 注：本批实测（6 源 15 分片）未复现「缺 Referer 导致失败」，故这是【写法一致性】改进，
+    //     不是 bug 修复；加超时是为了避免源站慢时挂住（原先无超时）。
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let response: Response;
+    try {
+      response = await fetch(decodedUrl, {
+        cache: 'no-cache',
+        redirect: 'follow',
+        credentials: 'same-origin',
+        headers: buildUpstreamHeaders(request, decodedUrl, ua),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      return proxyErrorResponse(error, 'precheck');
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
-      return NextResponse.json({ error: 'Failed to fetch', message: response.statusText }, { status: 500 });
+      return NextResponse.json(
+        { error: 'Failed to fetch', message: response.statusText },
+        { status: 502 }
+      );
     }
 
     const contentType = response.headers.get('Content-Type');
