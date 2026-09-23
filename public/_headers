@@ -1,6 +1,10 @@
-# ⚠️ HTML 文件不缓存（确保每次都能拉取最新资源引用）
-/*
-  Cache-Control: no-cache, no-store, must-revalidate
+# ============================================================
+# CF Pages 响应头规则
+# ⚠️ 注意：CF Pages 的 _headers 多规则【累加合并】，同名字段用逗号拼接，
+#    不是「后者覆盖前者」。因此【不能用 /* 通配兜底 Cache-Control】——
+#    否则会与具体规则拼成 "no-store, public,max-age=..."，
+#    no-store 使长缓存完全失效（2026-09-23 实测 28 个 JS/CSS 全部 BYPASS）。
+# ============================================================
 
 # 静态资源缓存（1年）- Next.js 文件名带 hash，内容变化文件名变
 /_next/static/*
@@ -26,6 +30,16 @@
 /*.woff
   Cache-Control: public, max-age=31536000
 
-# API 缓存（不缓存）
+# API 缓存（不缓存）—— 只针对 /api/*，不影响静态资源
 /api/*
   Cache-Control: no-store, no-cache, must-revalidate
+
+# 安全头（对所有路径生效，不含 Cache-Control，因此不会与其他规则冲突）
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# 说明：HTML 页面（/、/login、/play 等）不在此处设 Cache-Control。
+#   - CF 对 Worker/SSR 生成的内容本就是 cf-cache-status: DYNAMIC（不边缘缓存）
+#   - Next.js App Router 自身会对 SSR 响应设置合适的 Cache-Control
+#   若上线后发现 HTML 被浏览器缓存导致更新延迟，再按路径精确补 no-cache。
